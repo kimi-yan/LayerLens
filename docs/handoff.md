@@ -108,6 +108,46 @@
 - 验证：本机重建后经 explorer 真实打开快捷方式，控制台窗口正常出现（标题「LayerLens 控制台」，进程命令行含绝对 `-File` 路径）；`git clone` 到临时目录模拟新克隆，占位版被 `-IfNeeded` 改写为指向克隆目录的全绝对路径，重复调用不重写文件，`git status` 不出现 `.lnk`；三个脚本 PowerShell 5.1 语法解析零错误。
 - 文档同步：README 快速开始与仓库结构、使用指南「三分钟上手」「停止和关闭」、故障排查、文件清单、CLAUDE.md / AGENTS.md 目录表。
 
+## 2026-11-21 全面代码审查与修复
+
+- 审查范围：backend 全部、engine/adapter 全部、frontend/src 全部与 index.html、studio.css、scripts 的 doctor/setup-engine/verify_exports。后端 27 个 unittest 全绿；前端重建后在真实浏览器操作验证。
+- 修复的真实缺陷：
+  - `qwen_run.fit_children` 把子层 alpha 裁剪到父层后可能产生空层，`verify` 拒收导致整个递归细拆任务 ENGINE_FAILED（实例 ee764ccd / c7a2df61 的 L2.3，失败产物中 alpha>8 像素为 0）。裁剪后变空的子层丢弃，不足 2 个记 unchanged；新增回归测试，并用同种子重试原失败任务验证。
+  - `assets.build_preview` 在 preview 目录存在但 manifest 缺失时 `rename` 抛 FileExistsError，/layers 与导出持续 500；现在先清掉陈旧目录再重建，新增回归测试。
+  - 新建弹窗的安装提示与图层档位提示每 2.2 s 轮询无条件重写 innerHTML：安装命令无法选中复制、复制按钮丢焦点、role="status" 重复播报。改为内容变化才重写；浏览器 MutationObserver 实测 5 s 内 0 次重写。
+  - 画布 `alphaCache` 跨项目无限增长（每层最高 1 MB）；切换项目时只保留当前项目的图层缓存，清空项目时全清。
+  - `pointercancel` 原先与 `pointerup` 一样提交半截拖动；现在按取消回滚，与 Escape 一致。
+  - 导航任务徽标用 /jobs 的 80 条上限列表长度，任务多于 80 时显示错误；达到上限时改取 task-center 的真实计数。
+  - toast 入场动画是死代码且 keyframes 带 translate(-50%) 会错位；修正 keyframes 并挂到 toast 上，浏览器截图确认。
+- 新增交互：任务从 running 进入终态时弹一次完成/失败提示（轮询对比上一轮状态，只报一次）；See-through 参数区按分辨率与步数显示参考耗时（1024/30 实测 355 s、1280/30 实测 486 s）。
+- 分层质量复核（同一角色立绘，种子 42）：1024/30、1024/50、1280/30 三次真实任务，17 层结构一致，verify_exports 全部 PASS（重组差 0）。角色区域 MAE 14.12 / 14.29 / 12.42，p90 27.7 / 28.7 / 20.0：加步数无收益、1280 边缘保真更好，维持默认 1280/30。See-through 不含背景层，对整幅源图的重组误差（约 211）是口径问题不是缺陷；白背景残留散点约 0.2%、alpha 中位数约 20，为模型固有 matting 残留。Qwen 现有参数已有 b1–b10 与量化对照实测，本轮未发现可安全改进点，未改推理参数。
+- 文档同步：docs/architecture.md 补复核测量与空子层修复、使用指南等待一节补 1280 耗时与完成提示。
+
+## 2026-11-21 二轮代码审查与修复
+
+- 范围：重读一轮未逐行复核的模块（studio.js、api.js、workspace.js、studio-tasks.js、store.py、worker.py、assets.py、options.py、command.py、qwen_command.py、runner_io.py、run.py、derive.py）与一轮全部改动。一轮修复无回归；store 对已永久删除父任务的派生重试本就返回 409 PARENT_UNAVAILABLE，疑似缺口不存在。
+- 修复的真实缺陷：
+  - 预览完整性：manifest 在但图层/合成图缺失时永久 404。`preview_manifest` 现在校验清单引用的全部资产，缺失即重建；重建失败（PSD 损坏）抛 FileNotFoundError 映射 404 RESULT_MISSING，不再 500。
+  - Windows 流式冲突：一轮的 `rmtree(preview)` 会与正在流式下载的文件冲突（PermissionError）。改为原地覆盖发布（`publish_preview`），manifest 最后落盘，旧多余文件 best-effort 删除；`png_zip` 读资产期间持 preview_lock。
+  - 批次孤儿 ZIP：trash/restore 改变成员哈希后旧 `batch-<id>-*.zip` 永久残留；新包生成后 best-effort 清理同批次旧包。
+  - work 残留：崩溃恢复判 succeeded 后孤儿 work 目录不清理；requeue 清理失败后下次 claim 因 work 已存在而 ENGINE_FAILED。setup 恢复分支与 run_job 开头都清理陈旧 work。
+  - 孤儿引擎进程：owner 在 Popen 与握手字节之间死亡时（Windows），子进程阻塞在读 stdin 永不退出；nt 下 peek 线程提前到握手读之前启动（POSIX 保持原顺序避免双读竞争）。
+  - 前端轮询 catch 吞掉内部 bug：非网络/HTTP 异常现在 console.error，不再静默退化为“正在连接”。
+  - `details` 用真值判断丢掉了 reconstruction_mae 0.0；改为显式空值判断。
+- 分层效果：补测唯一未实测开关 tblr_split。同一立绘 1024/30：开启 387 s（+9%）、23 层（左右对称部位独立），角色区域 MAE 14.12 / p90 27.7 / 残留散点与关闭时完全一致，verify_exports PASS。据此把 See-through 的 tblr_split 默认改为 true（options.py、index.html 复选框默认勾选并加说明），README / 使用指南 / api.md / architecture.md 同步“约 23 层、可关回 17 层”口径。
+- 交互：上传草稿列表加缩略图预览（object URL 随文件离 draft 即释放）。
+- 测试：新增 4 个回归测试（预览部分丢失自愈、批次孤儿清理、stale work 替换、崩溃恢复清理），全量 31 个 unittest 通过；假引擎测试夹具补最小真实预览以匹配完整性校验。
+- 生效说明：后端改动需重启服务生效；审查期间有对照任务在跑，未重启，收尾时经控制台停止再启动。
+
+## 2026-11-21 三轮审查与优化
+
+- 盲区补读：studio-segmented.js（滑块 thumb 的 MutationObserver/ResizeObserver 逻辑无缺陷）、vite/tailwind 配置、engines.md 与安装脚本口径。修正 engines.md 两处过时描述：17–23 层改为默认 23 层口径；"任务管理器显示约 17 GB 共享 GPU 内存"与 low_cpu_mem 默认开启矛盾，改为按需锁页、不再出现大片共享内存，并补 3 层递归约 19 GB 与 1280 约 8 分钟。
+- 真实质量缺陷修复：`qwen_run.encode_prompts` 先把 embeds 截到 512，而管线 `__call__` 默认 512、硬上限 1024，helper 只按实际 token 长度 padding——长手动 prompt（中文 1500 字可达约 1000+ tokens）被静默砍半，与界面承诺不符。改为保留自然长度并在 `decompose` 传 `max_sequence_length=1024`；短图注零代价。sidecar 新增 `prompt_tokens` 透明化实际生效长度。实测 1084 字中文 prompt = 811 tokens 完整生效（修复前截到 512），5 层、MAE 6.88、verify PASS。
+- 缓存 schema 演进缺陷：details 被烘焙进 preview/manifest.json，新增 sidecar 字段在旧缓存上永远不出现。details 改为每次读 manifest 时从 sidecar 重新提取的派生视图（`sidecar_details`），旧缓存无需重建即带出新字段；新增回归测试。
+- 交互欠账落地：不透明度与可见性纳入统一撤销栈（`recordPaint`，与位移共用 Ctrl+Z/Ctrl+Y，滑杆burst 600ms 合并）；顶栏新增运行中进度条（复用轮询，含 indeterminate 扫动与 reduced-motion 适配）；Qwen 画面描述加按画风插入模板（电商白底/海报插画/贴纸手账/扫描文档）。浏览器实测：进度条 73% 带阶段标题、不透明度 40%→Ctrl+Z→100%、隐藏→Ctrl+Z→恢复、模板插入生效。
+- 分层效果探针（负结果记录）：CFG 6.0 对照 4.0（咖啡海报同种子）：重组误差 4.96 vs 5.65 更低，但可分离层 4→3 丢一层——分层粒度优先于重组误差，维持默认 4.0。结合前两轮：30 步、1280、TBLR 开、CFG 4.0 均为实测最优或官方推荐，未再改默认。
+- 测试 32 个全绿；服务在无活动任务时重启生效（队列中有用户自提交任务，等其自然结束后才重启）。
+
 ## 已知限制
 
 - Qwen 单张 640 px、4 层、30 步约 7 分钟。去噪阶段 GPU 利用率约 96%，瓶颈在 20B 模型的计算量，不在显存交换；1024 px 每步约 45 秒，未开放。

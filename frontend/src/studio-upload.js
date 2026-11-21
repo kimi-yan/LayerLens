@@ -33,6 +33,8 @@ function resetForm() {
 // Reference timings from an RTX 4070 12 GB at 640 px (docs/architecture.md): model loading plus
 // seconds per step for each layer count. 7 and 8 are extrapolated from the linear growth of 3–6.
 const qwenTiming = { load: 20, perStep: { 3: 12, 4: 14.2, 5: 17, 6: 19.4, 7: 22, 8: 24.5 } }
+// See-through end-to-end seconds at 30 steps, both passes included (docs/architecture.md).
+const stTiming = { 1024: 355, 1280: 486 }
 // Layer-cap guidance is phrased against a 12 GB GPU as the reference class. 6+ is allowed but discouraged.
 const layerTiers = {
   3: ['ok', '轻量', '元素较少的画面够用，速度最快，显存需求约 7.5 GiB。'],
@@ -43,6 +45,19 @@ const layerTiers = {
   8: ['danger', '强烈不建议', '显存需求更高（预计超过 14 GiB），显存不足 24 GB 的显卡很可能失败；层数过多也会把画面切得过碎。'],
 }
 const layerTier = (layers) => layerTiers[layers] || layerTiers[8]
+// Scene templates: a manual prompt measurably improves key-layer separation, so give users a
+// starting point that describes each art style's layout conventions instead of a blank box.
+const promptTemplates = {
+  ecom: 'E-commerce product photo on a pure white background: the product, its printed label text and any promo badges are separate elements.',
+  poster: 'Flat graphic poster: headline text, the main illustration subject, decorative shapes and small footer text are separate elements on a plain background.',
+  sticker: 'Sticker sheet on white background: each sticker is a separate element with its own white border, plus handwritten note text.',
+  scan: 'Scanned document page: paper background, printed text blocks, tables and stamp marks are separate elements.',
+}
+
+// The 2.2 s poll repaints these hints; rewriting innerHTML when nothing changed would drop text
+// selections, steal button focus and re-announce the role="status" regions on every tick.
+let capMarkupKey = ''
+let setupMarkup = ''
 
 function paintLayerCap() {
   const slider = $('qw-layers')
@@ -52,6 +67,9 @@ function paintLayerCap() {
   $('qw-layers-val').dataset.tone = tone
   slider.dataset.tone = tone
   slider.style.setProperty('--fill', ((layers - slider.min) / (slider.max - slider.min || 1) * 100) + '%')
+  const key = layers + ':' + slider.min + ':' + slider.max
+  if (key === capMarkupKey) return
+  capMarkupKey = key
   const hint = $('qw-layers-hint')
   hint.dataset.tone = tone
   hint.innerHTML = '<b>' + escape(label) + '</b><span>' + escape(detail) + ' 实际输出可能更少，空层会自动省略。</span>'
@@ -67,7 +85,12 @@ function error(message) {
   $('modal-error').classList.toggle('hidden', !message)
 }
 
+// Object URLs for the draft thumbnails, released as soon as a file leaves the draft.
+const fileThumbs = new Map()
 function paintFiles() {
+  for (const [file, url] of fileThumbs) {
+    if (!files.includes(file)) { URL.revokeObjectURL(url); fileThumbs.delete(file) }
+  }
   text('modal-upload-filename', files.length === 1 ? files[0].name : files.length ?
     '已选择 ' + files.length + ' 张图片' : '点击上传图片，或拖拽到这里')
   const bytes = files.reduce((sum, file) => sum + file.size, 0)
@@ -76,10 +99,14 @@ function paintFiles() {
   $('modal-dropzone').dataset.filled = String(files.length > 0)
   const list = $('modal-file-list')
   list.classList.toggle('hidden', !files.length)
-  list.innerHTML = files.map((file, index) => '<div class="flex justify-between items-center gap-2.5 rounded-md surface-elevated px-2.5 py-1.5">' +
-    '<span class="text-[13px] text-main truncate" title="' + escape(file.name) + '">' + escape(file.name) + '</span><button data-remove-file="' +
-    index + '" class="h-8 px-2.5 btn-ghost rounded text-[13px]" aria-label="移除 ' + escape(file.name) + '"' +
-    (submitting ? ' disabled' : '') + '>移除</button></div>').join('')
+  list.innerHTML = files.map((file, index) => {
+    if (!fileThumbs.has(file)) fileThumbs.set(file, URL.createObjectURL(file))
+    return '<div class="flex justify-between items-center gap-2.5 rounded-md surface-elevated px-2.5 py-1.5">' +
+      '<img src="' + fileThumbs.get(file) + '" alt="" class="w-9 h-9 rounded object-contain bg-checker-sm border border-hairline shrink-0">' +
+      '<span class="text-[13px] text-main truncate min-w-0 flex-1" title="' + escape(file.name) + '">' + escape(file.name) + '</span><button data-remove-file="' +
+      index + '" class="h-8 px-2.5 btn-ghost rounded text-[13px]" aria-label="移除 ' + escape(file.name) + '"' +
+      (submitting ? ' disabled' : '') + '>移除</button></div>'
+  }).join('')
   updateVramEstimate()
 }
 
@@ -135,6 +162,11 @@ function qwenEstimate() {
   return '参考耗时约 ' + minutes + ' 分钟/张（以 RTX 4070 12 GB 为基准' + (layers >= 7 ? '，外推估算' : '') + '，实际取决于硬件，不含排队）。'
 }
 
+function stEstimate() {
+  const seconds = (stTiming[number('st-res')] ?? stTiming[1024]) * number('st-steps') / 30
+  return '参考耗时约 ' + Math.max(1, Math.round(seconds / 60)) + ' 分钟/张（以 RTX 4070 12 GB 为基准，实际取决于硬件，不含排队）。'
+}
+
 // Explains an engine that cannot run yet and gives the one command that installs it.
 function paintSetup(ready) {
   for (const model of ['qwen', 'seethrough']) $('engine-card-' + model).dataset.ready = String(!state.capabilities || Boolean(engine(model)?.ready))
@@ -143,20 +175,22 @@ function paintSetup(ready) {
   const show = Boolean(state.capabilities && profile && !ready)
   note.classList.toggle('hidden', !show)
   $('params-step').classList.toggle('hidden', show)
-  if (!show) return
+  if (!show) { setupMarkup = ''; return }
   const other = ['qwen', 'seethrough'].find((model) => model !== engineId && engine(model)?.ready)
   const switchHint = other ? '<p class="setup-note-foot">「' + escape(engineName(other)) + '」已经可以使用，可以先切换过去。</p>' : ''
+  let markup
   if (!state.capabilities.worker_alive) {
-    note.innerHTML = '<p class="setup-note-title">后台任务进程已停止</p><p class="setup-note-text">重新运行 Start-LayerLens.ps1 后即可提交任务，已有结果不受影响。</p>'
-    return
+    markup = '<p class="setup-note-title">后台任务进程已停止</p><p class="setup-note-text">重新运行 Start-LayerLens.ps1 后即可提交任务，已有结果不受影响。</p>'
+  } else {
+    const setup = profile.setup || {}
+    const size = setup.download_gib ? '需要下载约 ' + setup.download_gib + ' GB 模型文件，占用约 ' + setup.disk_gib + ' GB 磁盘，' : ''
+    markup = '<p class="setup-note-title">「' + escape(engineName(engineId)) + '」还没有安装</p>' +
+      '<p class="setup-note-text">缺少' + escape((profile.missing_parts || []).map((part) => part.label).join('、') || '所需文件') + '。在项目根目录打开 PowerShell 运行下面的命令，' + size + '装好后刷新本页。</p>' +
+      (setup.command ? '<div class="setup-note-command"><code>' + escape(setup.command) + '</code><button type="button" data-copy="' + escape(setup.command) +
+        '" class="h-8 px-3 rounded-md btn-outline text-[13px] shrink-0">复制</button></div>' : '') +
+      '<p class="setup-note-foot">完整步骤、硬件要求和常见问题见 ' + escape((setup.guide || 'docs/engines.md').split('#')[0]) + '。</p>' + switchHint
   }
-  const setup = profile.setup || {}
-  const size = setup.download_gib ? '需要下载约 ' + setup.download_gib + ' GB 模型文件，占用约 ' + setup.disk_gib + ' GB 磁盘，' : ''
-  note.innerHTML = '<p class="setup-note-title">「' + escape(engineName(engineId)) + '」还没有安装</p>' +
-    '<p class="setup-note-text">缺少' + escape((profile.missing_parts || []).map((part) => part.label).join('、') || '所需文件') + '。在项目根目录打开 PowerShell 运行下面的命令，' + size + '装好后刷新本页。</p>' +
-    (setup.command ? '<div class="setup-note-command"><code>' + escape(setup.command) + '</code><button type="button" data-copy="' + escape(setup.command) +
-      '" class="h-8 px-3 rounded-md btn-outline text-[13px] shrink-0">复制</button></div>' : '') +
-    '<p class="setup-note-foot">完整步骤、硬件要求和常见问题见 ' + escape((setup.guide || 'docs/engines.md').split('#')[0]) + '。</p>' + switchHint
+  if (markup !== setupMarkup) { note.innerHTML = markup; setupMarkup = markup }
 }
 
 export function updateVramEstimate() {
@@ -169,6 +203,7 @@ export function updateVramEstimate() {
   paintLayerCap()
   text('qw-steps-val', $('qw-steps').value + ' 步')
   text('qw-estimate', qwenEstimate())
+  text('st-estimate', stEstimate())
   $('submit-task').disabled = !ready || !files.length || submitting
   text('submit-task', submitting ? '正在提交…' : '开始拆层任务')
 }
@@ -273,6 +308,10 @@ export function bindUpload() {
   })
   for (let step = 1; step <= 10; step++) $('st-depth-steps').add(new Option(String(step), String(step)))
   for (const id of ['qw-layers', 'qw-steps']) $(id).addEventListener('input', updateVramEstimate)
+  $('qw-prompt-template').addEventListener('change', (event) => {
+    const template = promptTemplates[event.target.value]
+    if (template) { $('qw-prompt').value = template; event.target.value = '' }
+  })
   $('upload-input').addEventListener('change', (event) => {
     addFiles(Array.from(event.target.files))
     event.target.value = ''

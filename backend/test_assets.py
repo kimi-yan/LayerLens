@@ -77,3 +77,55 @@ class AssetTest(unittest.TestCase):
             self.assertTrue((result / "preview" / "mask-0.png").is_file())
             with ZipFile(png_zip(result)) as bundle:
                 self.assertIn("01-product.png", bundle.namelist())
+
+    def test_stale_preview_directory_without_manifest_is_rebuilt(self):
+        with TemporaryDirectory() as temporary:
+            result = Path(temporary)
+            (result / "input").mkdir()
+            color = PSDImage.new("RGBA", (8, 8))
+            color.create_pixel_layer(Image.new("RGBA", (2, 2), (120, 30, 50, 255)), name="product", left=3, top=2)
+            color.save(result / "input.psd")
+            Image.new("RGBA", (8, 8)).save(result / "input" / "src_img.png")
+            (result / "input.psd.json").write_text('{"frame_size":[8,8]}', encoding="utf-8")
+            preview_manifest(result)
+            # Simulate a partial loss: the directory survives but the manifest is gone.
+            (result / "preview" / "manifest.json").unlink()
+            (result / "preview" / "layer-0.png").unlink()
+            manifest = preview_manifest(result)
+            self.assertEqual([layer["tag"] for layer in manifest["layers"]], ["product"])
+            self.assertTrue((result / "preview" / "layer-0.png").is_file())
+
+    def test_preview_with_manifest_but_missing_assets_is_rebuilt(self):
+        with TemporaryDirectory() as temporary:
+            result = Path(temporary)
+            (result / "input").mkdir()
+            color = PSDImage.new("RGBA", (8, 8))
+            color.create_pixel_layer(Image.new("RGBA", (2, 2), (120, 30, 50, 255)), name="product", left=3, top=2)
+            color.save(result / "input.psd")
+            Image.new("RGBA", (8, 8)).save(result / "input" / "src_img.png")
+            (result / "input.psd.json").write_text('{"frame_size":[8,8],"reconstruction_mae":0.0,"prompt_tokens":600}', encoding="utf-8")
+            manifest = preview_manifest(result)
+            self.assertEqual(manifest["details"]["reconstruction_mae"], 0.0)
+            self.assertEqual(manifest["details"]["prompt_tokens"], 600)
+            (result / "preview" / "layer-0.png").unlink()
+            (result / "preview" / "mask-0.png").unlink()
+            rebuilt = preview_manifest(result)
+            self.assertEqual([layer["tag"] for layer in rebuilt["layers"]], ["product"])
+            self.assertTrue((result / "preview" / "layer-0.png").is_file())
+            self.assertTrue((result / "preview" / "mask-0.png").is_file())
+
+    def test_cached_preview_picks_up_new_sidecar_fields_without_rebuild(self):
+        with TemporaryDirectory() as temporary:
+            result = Path(temporary)
+            (result / "input").mkdir()
+            color = PSDImage.new("RGBA", (8, 8))
+            color.create_pixel_layer(Image.new("RGBA", (2, 2), (120, 30, 50, 255)), name="product", left=3, top=2)
+            color.save(result / "input.psd")
+            Image.new("RGBA", (8, 8)).save(result / "input" / "src_img.png")
+            (result / "input.psd.json").write_text('{"frame_size":[8,8]}', encoding="utf-8")
+            cached = preview_manifest(result)
+            self.assertNotIn("details", cached)
+            # A newer engine run adds fields the cached manifest never saw.
+            (result / "input.psd.json").write_text('{"frame_size":[8,8],"prompt_tokens":811}', encoding="utf-8")
+            refreshed = preview_manifest(result)
+            self.assertEqual(refreshed["details"]["prompt_tokens"], 811)

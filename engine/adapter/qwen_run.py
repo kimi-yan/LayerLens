@@ -100,10 +100,12 @@ def encode_prompts(models, text_encoder, jobs, report, metrics):
         report("encoding", index, len(jobs))
         # _get_qwen_prompt_embeds always returns the mask; encode_prompt drops an all-ones mask, and the
         # pipeline then cannot tell that precomputed negative embeddings enable true CFG.
+        # Keep the natural token length (the helper pads only to the batch's real length): slicing to
+        # 512 here would silently halve long manual prompts. decompose() caps at the pipeline's 1024.
         with torch.inference_mode():
-            job["prompt_embeds"] = [value[:, :512].cpu() for value in
+            job["prompt_embeds"] = [value.cpu() for value in
                                     pipe._get_qwen_prompt_embeds(job["prompt"], device="cuda")]
-            job["negative_embeds"] = [value[:, :512].cpu() for value in
+            job["negative_embeds"] = [value.cpu() for value in
                                       pipe._get_qwen_prompt_embeds(options["negative_prompt"] or " ", device="cuda")]
     metrics.phase("captioning_and_encoding", began)
     del pipe, encoder
@@ -208,6 +210,9 @@ def decompose(pipe, job, report, metrics, label):
             true_cfg_scale=options["true_cfg_scale"], layers=job["layers"],
             num_inference_steps=options["inference_steps"], resolution=options["resolution"],
             cfg_normalize=options["cfg_normalize"], generator=torch.Generator(device="cuda").manual_seed(options["seed"]),
+            # The pipeline default of 512 would cut long manual prompts; 1024 is its hard cap and costs
+            # nothing for shorter ones because embeds carry only their real token length.
+            max_sequence_length=1024,
             callback_on_step_end=on_step_end,
         )
     # Step 1 also covers VAE encoding and latent setup; the tail after the last step is VAE decoding.
@@ -327,7 +332,8 @@ def fit_children(parent, children):
 
     ``parent`` is the cropped parent RGBA; ``children`` hold images and xyxy relative to the same
     crop. Errors compare premultiplied pixels over the union footprint on the 0-255 scale. A sub-layer
-    cannot show where its parent was transparent, so each child's alpha is capped by the parent's.
+    cannot show where its parent was transparent, so each child's alpha is capped by the parent's;
+    children that clip away to nothing are dropped from the returned list.
     """
     import numpy as np
     from PIL import Image
@@ -350,7 +356,10 @@ def fit_children(parent, children):
         image = child["image"].copy()
         image.putalpha(Image.fromarray(np.minimum(np.asarray(image.getchannel("A")),
                                                   np.asarray(cap.crop((left, top, right, bottom))))))
-        clipped.append({**child, "image": image})
+        # A child whose content lay outside the parent's footprint clips away to nothing; an
+        # empty layer would fail the output contract, so drop it instead of publishing it.
+        if np.any(np.asarray(image.getchannel("A")) > ALPHA_FLOOR):
+            clipped.append({**child, "image": image})
     return clipped, {"alpha_error": round(float(alpha_error), 2), "color_error": round(float(color_error), 2)}
 
 
@@ -378,6 +387,7 @@ def run_layers(request, report, metrics):
     if not parts:
         raise ValueError("The model returned only empty layers")
     sidecar = {"engine": "qwen-image-layered", "weights": request["weights"], "prompt": job["prompt"],
+               "prompt_tokens": int(job["prompt_embeds"][0].shape[1]),
                "dropped_empty_layers": dropped, "reconstruction_mae": reconstruction_error(parts, size, source)}
     return size, source, parts, sidecar
 
@@ -423,6 +433,10 @@ def run_recursive(request, report, metrics):
             unchanged.append(job["tag"])
             continue
         children, fidelity = fit_children(parent_part["image"], children)
+        # Clipping to the parent can empty stray children; without two survivors there is no split.
+        if len(children) < 2:
+            unchanged.append(job["tag"])
+            continue
         print(f"Recursive split {job['tag']}: {fidelity}", flush=True)
         if not accepted(fidelity):
             rejected[job["tag"]] = {"reason": "not_recomposable", **fidelity}

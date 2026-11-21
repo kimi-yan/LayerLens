@@ -64,6 +64,10 @@ class Worker:
         log = folder / "engine.log"
         requeue = False
         try:
+            # A previous attempt may have left scratch behind (failed cleanup after a requeue);
+            # stale progress events in it would misreport this run.
+            if work.is_dir():
+                rmtree(work)
             work.mkdir()
             error, requeue = self.infer(job, folder, work, log)
         except (OSError, ValueError) as exception:

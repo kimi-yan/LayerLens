@@ -101,6 +101,9 @@ export async function switchProject(jobId, push = true) {
       if (controller.signal.aborted) return
       Object.assign(panel, { selected: info.layers.at(-1)?.id, solo: null, multi: false, mode: 'composite', zoom: 1, split: 50, pending: null, pan: { x: 0, y: 0 }, undo: [], redo: [] })
       panel.checked.clear()
+      // Alpha maps hold up to 1 MB per layer; keep only the project being viewed.
+      const keep = new Set(info.layers.map((layer) => layer.image))
+      for (const key of alphaCache.keys()) if (!keep.has(key)) alphaCache.delete(key)
       $('layer-search').value = ''
       state.project = job
       state.manifest = info
@@ -123,6 +126,7 @@ export function clearProject(deleted) {
   panel.undo = []
   panel.redo = []
   panel.checked.clear()
+  alphaCache.clear()
   renderWorkbench()
 }
 
@@ -281,6 +285,7 @@ function renderRightPanel() {
     ['拆分层数', (derivation?.layers ? derivation.layers + ' 子层 · 递归' : opts.layers + ' 层')], ['推理步数', opts.inference_steps],
     ['CFG', opts.true_cfg_scale + (opts.cfg_normalize ? ' · 归一化' : '')], ['随机种子', opts.seed],
     ['图注语言', opts.caption_language === 'zh' ? '中文' : '英文'], ['权重', project.engine_version.replace(/^qwen-image-layered-gguf-/, 'GGUF ')],
+    ...(details.prompt_tokens != null ? [['提示词 tokens', details.prompt_tokens + ' / 1024']] : []),
     ...(details.reconstruction_mae != null ? [['重组误差', details.reconstruction_mae + ' / 255']] : []),
     ...Object.entries(details.recursive_fidelity || {}).map(([tag, fit]) => ['子层还原 · ' + qwenName(tag), fit.color_error + ' / 255']),
     ...(details.dropped_empty_layers?.length ? [['省略空层', details.dropped_empty_layers.map(qwenName).join('、')]] : []),
@@ -359,14 +364,19 @@ export function resetAllLayersVisibility() {
   if (!manifest()) return
   panel.solo = null
   const existing = edits()
+  const patches = layers().filter((layer) => existing[layer.id]?.visible === false)
+    .map((layer) => ({ id: layer.id, from: { visible: false }, to: { visible: true } }))
   editHistory[state.project.job_id] = Object.fromEntries(Object.entries(existing).map(([layer, edit]) => [layer, { opacity: edit.opacity, offsetX: edit.offsetX, offsetY: edit.offsetY }]))
   storeEdits(editHistory)
+  recordPaint(patches)
   inspector(); renderLayerList(); renderCanvas()
 }
 export function updateSelectedLayerOpacity(value) {
   const layer = current()
   if (!layer) return
+  const from = { opacity: opacity(layer) }
   update(layer, { opacity: Number(value) })
+  recordPaint([{ id: layer.id, from, to: { opacity: Number(value) } }], 'opacity:' + layer.id)
   text('inspector-opacity-val', value + '%')
   const label = document.querySelector('[data-opacity="' + id(layer) + '"]')
   if (label) label.textContent = value + '%'
@@ -593,9 +603,29 @@ function record(changes, mergeKey) {
   } else panel.undo = [...panel.undo, { changes, mergeKey, at: Date.now() }].slice(-100)
   panel.redo = []
 }
+// Opacity / visibility edits share the offset history so Ctrl+Z walks every adjustment in order.
+function recordPaint(patches, mergeKey) {
+  patches = patches.filter((patch) => JSON.stringify(patch.from) !== JSON.stringify(patch.to))
+  if (!patches.length) return
+  const last = panel.undo.at(-1)
+  const same = last && last.paint && last.mergeKey === mergeKey && last.paint.map((patch) => patch.id).join() === patches.map((patch) => patch.id).join()
+  if (mergeKey && same && Date.now() - last.at < 600) {
+    last.paint.forEach((patch, index) => { patch.to = patches[index].to })
+    last.at = Date.now()
+  } else panel.undo = [...panel.undo, { paint: patches, mergeKey, at: Date.now() }].slice(-100)
+  panel.redo = []
+}
 function step(from, side) {
   const entry = (from === 'undo' ? panel.undo : panel.redo).pop()
   if (!entry) return
+  if (entry.paint) {
+    const patches = entry.paint.filter((patch) => layers().some((layer) => layer.id === patch.id))
+    patchEdits(Object.fromEntries(patches.map((patch) => [patch.id, side === 'from' ? patch.from : patch.to])))
+    inspector(); renderLayerList(); renderCanvas()
+    ;(from === 'undo' ? panel.redo : panel.undo).push(entry)
+    toast((from === 'undo' ? '已撤销' : '已重做') + '显示调整 · ' + patches.length + ' 个图层')
+    return
+  }
   const changes = entry.changes.filter((change) => layers().some((layer) => layer.id === change.id))
   applyChanges(changes, side)
   ;(from === 'undo' ? panel.redo : panel.undo).push(entry)
@@ -722,7 +752,8 @@ function finishDrag(cancel) {
   setCursor()
 }
 function endDrag(event) {
-  if (drag && event.pointerId === drag.id) finishDrag(false)
+  // An interrupted gesture (pointercancel) reverts like Escape; only a real release commits.
+  if (drag && event.pointerId === drag.id) finishDrag(event.type === 'pointercancel')
 }
 
 // Ctrl/⌘ + wheel (or trackpad pinch) zooms around the cursor; a plain wheel pans like Figma.
@@ -813,8 +844,12 @@ export function bindWorkbench() {
     if (data.layerPick) selectLayer(data.layerPick)
     if (data.layerEye) {
       const layer = layers().find((entry) => entry.id === data.layerEye)
+      if (!layer) return
       if (panel.solo) panel.solo = null
-      update(layer, { visible: edits()[layer.id]?.visible === false })
+      const from = { visible: edits()[layer.id]?.visible !== false }
+      const to = { visible: !from.visible }
+      update(layer, to)
+      recordPaint([{ id: layer.id, from, to }])
       inspector(); renderLayerList(); renderCanvas()
     }
     if (data.split) { panel.pending = panel.pending === data.split ? null : data.split; inspector() }

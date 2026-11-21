@@ -11,7 +11,9 @@ class Options(BaseModel):
     inference_steps: int = Field(default=30, ge=1, le=100)
     inference_steps_depth: Literal[-1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10] = -1
     seed: int = Field(default=42, ge=0, le=4294967295)
-    tblr_split: bool = False
+    # Left/right pairs (eyes, brows, ears, hands) as separate layers: measured identical fidelity,
+    # about 9% more time (docs/architecture.md). Off gives the coarser ~17-layer part set.
+    tblr_split: bool = True
     low_vram: bool = True
 
     @field_validator("low_vram")

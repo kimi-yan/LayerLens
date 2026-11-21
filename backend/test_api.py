@@ -14,8 +14,10 @@ from PIL import Image
 
 from engine.adapter.command import Engine
 from .app import WORKSPACE, create_app
+from .engines import profiles
 from .options import Options
 from .store import Store
+from .worker import Worker
 
 
 FAKE_ENGINE = """
@@ -444,6 +446,8 @@ class ApiTest(unittest.TestCase):
             folder = self.root / job["job_id"] / "result"
             (folder / "preview").mkdir()
             (folder / "preview" / "manifest.json").write_text(json.dumps({"layers": [{"tag": "face"}]}), encoding="utf-8")
+            for name in ("source.png", "composite.png"):
+                Image.new("RGBA", (4, 4)).save(folder / "preview" / name)
             endpoint = f"/api/v1/jobs/{job['job_id']}/results/base/postprocess"
             response = client.post(endpoint, json={"method": "left_right", "target_tags": ["face"], "layers": 3})
             self.assertEqual(response.json()["detail"]["code"], "INVALID_OPTIONS")
@@ -483,4 +487,58 @@ class ApiTest(unittest.TestCase):
         store.setup()
         self.assertEqual([(store.get(job_id)["status"], store.get(job_id)["error"]) for job_id in ("a" * 32, "b" * 32, "c" * 32)],
                          [("failed", "ENGINE_INTERRUPTED"), ("succeeded", None), ("cancelled", None)])
+
+    def test_crash_recovery_drops_orphaned_scratch_of_a_published_job(self):
+        store = Store(self.root)
+        store.setup()
+        job_id = "e" * 32
+        (self.root / job_id).mkdir()
+        store.enqueue(job_id, "x.png", "input.png", {}, engine_id="seethrough")
+        with store.connect() as db:
+            db.execute("UPDATE jobs SET status='running' WHERE id=?", (job_id,))
+        (self.root / job_id / "result").mkdir()
+        orphan = self.root / job_id / "work"
+        orphan.mkdir()
+        store.setup()
+        self.assertEqual(store.get(job_id)["status"], "succeeded")
+        self.assertFalse(orphan.exists())
+
+    def test_worker_replaces_stale_scratch_from_a_previous_attempt(self):
+        store = Store(self.root)
+        store.setup()
+        job_id = "d" * 32
+        (self.root / job_id).mkdir()
+        (self.root / job_id / "input.png").write_bytes(self.image)
+        store.enqueue(job_id, "x.png", "input.png", {"seed": 10}, engine_id="seethrough")
+        work = self.root / job_id / "work"
+        work.mkdir()
+        (work / "progress.ndjson").write_text('{"stage": "complete"}\n', encoding="utf-8")
+        worker = Worker(store, profiles(WORKSPACE, FakeEngine(), FakeQwen()))
+        worker.run_job(store.get(job_id))
+        self.assertEqual(store.get(job_id)["status"], "succeeded")
+        self.assertFalse(work.exists())
+        self.assertTrue((self.root / job_id / "result").is_dir())
+
+    def test_batch_archive_orphans_are_removed_when_membership_changes(self):
+        with self.client() as client:
+            files = [("files", (f"image-{index}.png", self.image)) for index in range(2)]
+            batch = client.post("/api/v1/batches", files=files).json()
+            ids = [job["job_id"] for job in batch["jobs"]]
+            for job_id in ids:
+                self.wait(client, f"/api/v1/jobs/{job_id}", "succeeded")
+                # The fake engine writes a placeholder PSD; give the zip a minimal real preview.
+                preview = self.root / job_id / "result" / "preview"
+                preview.mkdir(parents=True)
+                (preview / "manifest.json").write_text(json.dumps({"width": 4, "height": 4, "layers": [], "has_depth": False}), encoding="utf-8")
+                for name in ("source.png", "composite.png"):
+                    Image.new("RGBA", (4, 4)).save(preview / name)
+            endpoint = f"/api/v1/batches/{batch['batch_id']}/exports/zip"
+            self.assertEqual(client.get(endpoint).status_code, 200)
+            archives = list(self.root.glob(f"batch-{batch['batch_id']}-*.zip"))
+            self.assertEqual(len(archives), 1)
+            client.post("/api/v1/task-center/trash", json={"ids": [ids[0]]}).raise_for_status()
+            self.assertEqual(client.get(endpoint).status_code, 200)
+            remaining = list(self.root.glob(f"batch-{batch['batch_id']}-*.zip"))
+            self.assertEqual(len(remaining), 1)
+            self.assertNotEqual(remaining[0].name, archives[0].name)
 

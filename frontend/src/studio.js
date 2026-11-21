@@ -3,8 +3,8 @@ import '@fontsource-variable/jetbrains-mono'
 import '@fontsource-variable/noto-sans-sc'
 import './studio.css'
 import { bindSegmented } from './studio-segmented.js'
-import { api } from './api.js'
-import { $, closeAction, confirmAction, downloadBatch, lastCompleted, paintGPU, setView, state, text } from './studio-state.js'
+import { api, ApiError, stage, terminal } from './api.js'
+import { $, closeAction, confirmAction, downloadBatch, lastCompleted, paintGPU, setView, state, text, toast } from './studio-state.js'
 import { adjustZoom, bindWorkbench, clearProject, exportComposite, focusProjectItem, exportSelectedLayer, renderBatch, renderLayerList, renderProjectDropdown,
   renderWorkbench, resetAllLayersVisibility, resetAllLayerPositions, resetSelectedLayerPosition, resetZoom, setCanvasTool, setSelectedLayerOffset, setBackdrop, setCanvasMode, setLayerViewMode, switchProject,
   toggleMultiSelect, toggleSoloLayer, updateSelectedLayerOpacity, cancelSplit, submitSplit } from './studio-workbench.js'
@@ -15,6 +15,8 @@ import { bindUpload, chooseFiles, closeNewTaskModal, openNewTaskModal, openNewTa
 let revision = 0
 let gpu = null
 let apiReady = false
+// Jobs seen as running on the previous poll, so a finish can be announced once from anywhere.
+let watched = new Map()
 
 function toggleProjectDropdown(event) {
   event.stopPropagation()
@@ -58,7 +60,31 @@ async function update() {
     apiReady = true
     state.jobs = jobs
     state.capabilities = capabilities
-    if (state.view !== 'tasks') text('nav-task-count', jobs.length)
+    const finished = jobs.filter((job) => watched.get(job.job_id) === 'running' && terminal(job))
+    watched = new Map(jobs.filter((job) => !terminal(job)).map((job) => [job.job_id, job.status]))
+    if (finished.length === 1) {
+      toast(finished[0].status === 'succeeded' ? '拆层完成：' + finished[0].filename : '任务失败：' + finished[0].filename)
+    } else if (finished.length > 1) toast(finished.length + ' 个任务已结束，可到任务中心查看')
+    const running = jobs.find((job) => job.status === 'running')
+    const strip = $('run-strip')
+    strip.classList.toggle('hidden', !running)
+    if (running) {
+      const { step, total_steps: total } = running.progress
+      const percent = total > 0 ? Math.min(100, Math.round((step ?? 0) / total * 100)) : null
+      strip.dataset.indeterminate = String(percent === null)
+      $('run-strip-bar').style.width = (percent ?? 35) + '%'
+      strip.setAttribute('aria-valuenow', String(percent ?? 0))
+      strip.title = stage(running)
+    }
+    if (state.view !== 'tasks') {
+      text('nav-task-count', jobs.length)
+      // /api/v1/jobs caps the recent list at 80 rows; at the cap the badge needs the true total.
+      if (jobs.length >= 80) {
+        api('/api/v1/task-center?filter=all&page=1')
+          .then((center) => { if (version === revision) text('nav-task-count', center.counts.all) })
+          .catch(() => {})
+      }
+    }
     updateVramEstimate()
     if (changed) renderWorkbench()
     if (!$('project-dropdown').classList.contains('hidden')) renderProjectDropdown()
@@ -69,7 +95,10 @@ async function update() {
     const batchId = state.view === 'workbench' ? state.project?.batch_id : (state.batchId || state.project?.batch_id)
     const batch = batchId ? await api('/api/v1/batches/' + batchId).catch(() => null) : null
     if (revision === version) { state.batch = batch; renderBatch() }
-  } catch {
+  } catch (error) {
+    // Service down or HTTP errors are expected; anything else is a bug and must not vanish
+    // into the "connecting" state without a trace.
+    if (!(error instanceof ApiError) && error?.name !== 'TypeError' && error?.name !== 'AbortError') console.error(error)
     state.capabilities = null
     updateVramEstimate()
   }

@@ -2,6 +2,7 @@ from pathlib import Path
 import sys
 import unittest
 
+import numpy as np
 from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "engine" / "adapter"))
@@ -36,6 +37,18 @@ class RecursiveSplitGuardTest(unittest.TestCase):
         glass = Image.new("RGBA", (8, 8), (200, 220, 255, 60))
         glass.paste((255, 255, 255, 255), (0, 0, 2, 8))
         self.assertFalse(is_overlay(glass))
+
+    def test_child_clipped_to_nothing_is_dropped_not_published_empty(self):
+        # Real failure (jobs ee764ccd / c7a2df61): a small stray child sat outside the parent's
+        # footprint, passed the mean-error gate, then clipped to zero alpha and failed verify().
+        parent = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
+        parent.paste((200, 50, 50, 255), (0, 0, 32, 64))
+        faithful = child((200, 50, 50), 255, (32, 64), [0, 0, 32, 64])
+        stray = child((200, 50, 50), 255, (4, 4), [40, 40, 44, 44])
+        clipped, fidelity = fit_children(parent, [faithful, stray])
+        self.assertTrue(accepted(fidelity), fidelity)
+        self.assertEqual([part["tag"] for part in clipped], ["L1.1"])
+        self.assertTrue(np.any(np.asarray(clipped[0]["image"].getchannel("A")) > 8))
 
 
 if __name__ == "__main__":

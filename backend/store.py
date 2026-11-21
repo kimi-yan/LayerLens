@@ -1,6 +1,7 @@
 from contextlib import contextmanager
 from datetime import UTC, datetime
 import json
+from shutil import rmtree
 import sqlite3
 
 
@@ -83,6 +84,8 @@ class Store:
             for job in db.execute("SELECT * FROM jobs WHERE status='running'").fetchall():
                 if (self.root / job["id"] / "result").is_dir():
                     self._finish(db, job["id"], "succeeded")
+                    # The crash happened after publishing; the scratch directory is orphaned.
+                    rmtree(self.root / job["id"] / "work", ignore_errors=True)
                 elif job["cancel_requested"]:
                     self._finish(db, job["id"], "cancelled")
                 else:

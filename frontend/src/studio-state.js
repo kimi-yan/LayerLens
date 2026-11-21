@@ -53,7 +53,7 @@ export function duration(job) {
 let toastTimer
 export function toast(message) {
   const bubble = document.createElement('div')
-  bubble.className = 'rounded-lg float-hud text-main text-[14px] px-5 py-3 whitespace-normal'
+  bubble.className = 'toast-enter rounded-lg float-hud text-main text-[14px] px-5 py-3 whitespace-normal'
   bubble.textContent = message
   $('toast-container').replaceChildren(bubble)
   clearTimeout(toastTimer)

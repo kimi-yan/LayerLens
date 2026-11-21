@@ -45,7 +45,7 @@ Windows PowerShell 5.1 没有 `-Form` 参数，可改用 `curl.exe -F`。PS 5.1 
 
 | 引擎 | 参数 |
 | --- | --- |
-| `seethrough` | `resolution` 1024/1280，`resolution_depth` 512/640/768，`inference_steps` 1–100，`inference_steps_depth` -1 或 1–10，`seed`，`tblr_split`，`low_vram` 必须为 `true`。 |
+| `seethrough` | `resolution` 1024/1280（默认 1280），`resolution_depth` 512/640/768，`inference_steps` 1–100（默认 30），`inference_steps_depth` -1 或 1–10，`seed`，`tblr_split` 默认 `true`（左右对称部位独立成层），`low_vram` 必须为 `true`。 |
 | `qwen` | `resolution` 640（按原图比例保持约 640² 像素），`layers` 3–8（默认 5），`inference_steps` 20–50，`true_cfg_scale` 1–8，`seed`，`prompt`（可选，留空则由 Qwen2.5-VL 自动生成图注），`negative_prompt`，`caption_language` `en`/`zh`，`cfg_normalize`。除 `layers` 外，范围只开放了参考环境（RTX 4070 12 GB）实测过的档位；`layers` 6–8 允许提交，但 6 层在 12 GB 显卡上会溢出到共享内存，7–8 层未实测，界面会提示并要求确认。见[架构文档](architecture.md#qwen-image-layered-参考基线rtx-4070-12-gb)。 |
 
 ### 二次拆分

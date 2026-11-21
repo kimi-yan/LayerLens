@@ -26,9 +26,15 @@ def wait_for_owner():
 
 
 def guard_owner():
+    # On Windows the peek thread must run before the blocking handshake read: if the owner dies
+    # between spawning this process and writing the byte, only the peek loop notices the closed
+    # pipe. A second reader would race the handshake on POSIX, so there it starts afterwards.
+    if os.name == "nt":
+        Thread(target=wait_for_owner, daemon=True).start()
     if os.read(sys.stdin.fileno(), 1) != b"\x01":
         sys.exit("Missing engine owner")
-    Thread(target=wait_for_owner, daemon=True).start()
+    if os.name != "nt":
+        Thread(target=wait_for_owner, daemon=True).start()
 
 
 class Reporter:

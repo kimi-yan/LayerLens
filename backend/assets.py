@@ -37,6 +37,24 @@ def thumbnail(source, folder):
     return path
 
 
+def sidecar_details(result):
+    """The informative subset of the engine sidecar, re-read on every manifest load.
+
+    Details are a derived view of the sidecar, not part of the cached preview: baking them into
+    manifest.json would hide newly added fields (e.g. prompt_tokens) behind old caches forever.
+    """
+    path = result / "input.psd.json"
+    if not path.is_file():
+        return {}
+    meta = json.loads(path.read_text(encoding="utf-8"))
+    details = {}
+    for key in ("prompt", "prompt_tokens", "reconstruction_mae", "dropped_empty_layers", "recursive_prompts", "recursive_fidelity"):
+        value = meta.get(key)
+        if value not in (None, "", [], {}):
+            details[key] = value
+    return details
+
+
 def build_preview(result: Path):
     color = PSDImage.open(result / "input.psd")
     depth_path = result / "input_depth.psd"
@@ -86,26 +104,65 @@ def build_preview(result: Path):
             scene_depth.save(temporary / "depth.png")
         copyfile(result / "input" / "src_img.png", temporary / "source.png")
         manifest = {"width": color.width, "height": color.height, "layers": layers, "has_depth": depth is not None}
-        details = {key: meta[key] for key in ("prompt", "reconstruction_mae", "dropped_empty_layers", "recursive_prompts", "recursive_fidelity") if meta.get(key)}
+        details = sidecar_details(result)
         if details:
             manifest["details"] = details
         derivation = result / "derivation.json"
         if derivation.is_file():
             manifest["derivation"] = json.loads(derivation.read_text(encoding="utf-8"))
         (temporary / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
-        temporary.rename(preview)
+        publish_preview(temporary, preview)
     finally:
         if temporary.is_dir():
             rmtree(temporary)
 
 
+def publish_preview(temporary, preview):
+    """Copy the built assets over the live preview in place, manifest last.
+
+    Renaming or deleting the preview directory fails on Windows while a response is still
+    streaming one of its files, so every asset is overwritten in place instead. Leftover files
+    from an older build are dropped best-effort; the manifest never references them.
+    """
+    preview.mkdir(exist_ok=True)
+    names = {path.name for path in temporary.iterdir()}
+    for name in sorted(names - {"manifest.json"}):
+        copyfile(temporary / name, preview / name)
+    copyfile(temporary / "manifest.json", preview / "manifest.json")
+    for path in preview.iterdir():
+        if path.name not in names:
+            try:
+                path.unlink()
+            except OSError:
+                pass
+
+
+def preview_complete(preview, manifest):
+    names = ["source.png", "composite.png"]
+    if manifest.get("has_depth"):
+        names.append("depth.png")
+    for layer in manifest["layers"]:
+        names.extend(layer[kind] for kind in ("image", "mask", "depth") if kind in layer)
+    return all((preview / name).is_file() for name in names)
+
+
 def preview_manifest(result):
-    manifest = result / "preview" / "manifest.json"
-    if not manifest.is_file():
-        with preview_lock:
-            if not manifest.is_file():
+    preview = result / "preview"
+    manifest_path = preview / "manifest.json"
+    with preview_lock:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.is_file() else None
+        # A manifest whose assets are gone (partial loss on disk) is as stale as no manifest at all.
+        if manifest is None or not preview_complete(preview, manifest):
+            try:
                 build_preview(result)
-    return json.loads(manifest.read_text(encoding="utf-8"))
+            except (OSError, ValueError) as error:
+                # Unreadable PSD: the result is missing, not a server error.
+                raise FileNotFoundError(result / "input.psd") from error
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        details = sidecar_details(result)
+        if details:
+            manifest["details"] = details
+    return manifest
 
 
 def safe_stem(name):
@@ -120,23 +177,25 @@ def png_zip(result):
     with png_zip_lock:
         if path.is_file():
             return path
-        temporary = result / "layers.zip.tmp"
-        try:
-            with ZipFile(temporary, "w", ZIP_DEFLATED, compresslevel=3) as bundle:
-                records = []
-                for layer in manifest["layers"]:
-                    filename = f"{layer['z_index'] + 1:02d}-{safe_stem(layer['tag'])}.png"
-                    canvas = Image.new("RGBA", (manifest["width"], manifest["height"]))
-                    with Image.open(result / "preview" / layer["image"]) as image:
-                        canvas.paste(image, tuple(layer["bbox_xyxy"][:2]))
-                    buffer = BytesIO()
-                    canvas.save(buffer, "PNG", compress_level=3)
-                    bundle.writestr(filename, buffer.getvalue())
-                    records.append({"file": filename, "tag": layer["tag"], "z_index": layer["z_index"]})
-                bundle.writestr("manifest.json", json.dumps({**manifest, "layers": records}, ensure_ascii=False))
-            temporary.replace(path)
-        finally:
-            temporary.unlink(missing_ok=True)
+        # Keep a concurrent preview rebuild from overwriting assets mid-read.
+        with preview_lock:
+            temporary = result / "layers.zip.tmp"
+            try:
+                with ZipFile(temporary, "w", ZIP_DEFLATED, compresslevel=3) as bundle:
+                    records = []
+                    for layer in manifest["layers"]:
+                        filename = f"{layer['z_index'] + 1:02d}-{safe_stem(layer['tag'])}.png"
+                        canvas = Image.new("RGBA", (manifest["width"], manifest["height"]))
+                        with Image.open(result / "preview" / layer["image"]) as image:
+                            canvas.paste(image, tuple(layer["bbox_xyxy"][:2]))
+                        buffer = BytesIO()
+                        canvas.save(buffer, "PNG", compress_level=3)
+                        bundle.writestr(filename, buffer.getvalue())
+                        records.append({"file": filename, "tag": layer["tag"], "z_index": layer["z_index"]})
+                    bundle.writestr("manifest.json", json.dumps({**manifest, "layers": records}, ensure_ascii=False))
+                temporary.replace(path)
+            finally:
+                temporary.unlink(missing_ok=True)
     return path
 
 
@@ -167,6 +226,14 @@ def batch_zip(root, batch_id, rows):
         with batch_zip_lock:
             if not path.is_file():
                 temporary.replace(path)
+            # Trashing or restoring a member changes the member hash; older archives of this
+            # batch are orphans once the new one exists.
+            for old in root.glob(f"batch-{batch_id}-*.zip"):
+                if old != path:
+                    try:
+                        old.unlink()
+                    except OSError:
+                        pass
     finally:
         temporary.unlink(missing_ok=True)
     return path
