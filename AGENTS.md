@@ -19,9 +19,9 @@ LayerLens（层析镜）把一张扁平图片拆成透明图层，导出 PSD、�
 | `frontend/` | `index.html` 是工作台页面，`src/studio-*.js` 分别处理状态、上传、任务中心和图层工作台，`api.js` 是请求边界，`workspace.js` 保存浏览器侧的图层调整，`studio.css` 配合 Tailwind |
 | `backend/` | `app.py`（FastAPI）、`store.py`（SQLite 队列）、`worker.py`（单 GPU 串行与子进程）、`assets.py`（PSD/PNG/ZIP）、`engines.py` 与 `options.py`（引擎注册与参数 schema）、`test_*.py` |
 | `engine/adapter/` | 每个引擎一个启动器（`command.py`、`qwen_command.py`）和运行脚本（`run.py`/`derive.py`、`qwen_run.py`），`runner_io.py` 负责握手与进度，`catalog.py` 是固定版本清单，`requirements-*.txt` 是引擎环境依赖 |
-| 根目录 | `LayerLens 控制台.lnk` 双击入口（带 Logo，随仓库分发；图标需要绝对路径，控制台启动时发现缺失或图标路径不对就自动重建，并设 git skip-worktree），`使用指南.html` 是面向使用者的图文指南，`Start-LayerLens.ps1` 是命令行启动方式 |
+| 根目录 | `LayerLens 控制台.lnk` 双击入口（带 Logo，随仓库分发的是相对路径占位版；启动路径和图标都需要绝对路径，`Start-LayerLens.ps1` 与控制台启动时发现缺失或路径不符就自动改写，并设 git skip-worktree），`使用指南.html` 是面向使用者的图文指南，`Start-LayerLens.ps1` 是命令行启动方式 |
 | `assets/` | `LayerLens.ico` 项目图标（控制台窗口与任务栏、自检 / 安装窗口标题栏），几何与工作台头部 SVG 一致 |
-| `scripts/` | `control-panel.ps1` 控制台窗口（WinForms，PowerShell 5.1；状态轮询和启停都在后台 runspace，界面线程不做阻塞调用），`setup-engine.ps1` 安装引擎，`doctor.py` 自检，`verify_exports.py` 复验导出，`LayerLens 控制台.cmd` 备用双击入口（首跑自动补齐顶层快捷方式），`New-ConsoleShortcut.ps1` 生成带 Logo 的双击快捷方式，`engines/` 下载权重，`bench/` 测量显存与耗时 |
+| `scripts/` | `control-panel.ps1` 控制台窗口（WinForms，PowerShell 5.1；状态轮询和启停都在后台 runspace，界面线程不做阻塞调用），`setup-engine.ps1` 安装引擎，`doctor.py` 自检，`verify_exports.py` 复验导出，`LayerLens 控制台.cmd` 备用双击入口（首跑自动修复顶层快捷方式），`New-ConsoleShortcut.ps1` 生成带 Logo 的双击快捷方式（`-IfNeeded` 供启动链路自检，`-ForRepo` 生成仓库占位版），`engines/` 下载权重，`bench/` 测量显存与耗时 |
 | `docs/` | `engines.md` 安装，`architecture.md` 架构与显存基线，`api.md` 接口与运维，`handoff.md` 交接记录 |
 
 只在本机存在、不入库的目录：`.local/`（`backend-venv`、`qwen-venv`、`seethrough-venv`，`control-panel/` 是控制台编译缓存的界面 DLL）、`engine/see-through/`（上游代码，固定提交，不要修改）、`data/`（任务、权重、缓存，服务日志在 `data/logs/`）、`output/`、`.tmpfiles/`（临时文件）。`data/jobs/` 和 `data/cache/models/` 是用户数据，不要删除或改写。

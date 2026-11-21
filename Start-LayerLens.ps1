@@ -16,6 +16,9 @@ function Invoke-Native {
 
 Push-Location -LiteralPath $PSScriptRoot
 try {
+    # The distributed shortcut is a relative-path placeholder (and goes stale after a project
+    # move); rewrite it to this checkout so the top-level double click opens the console.
+    try { & (Join-Path $PSScriptRoot 'scripts\New-ConsoleShortcut.ps1') -IfNeeded *> $null } catch { }
     $backend = Join-Path $PSScriptRoot '.local\backend-venv\Scripts\python.exe'
     if (-not (Test-Path -LiteralPath $backend)) {
         Invoke-Native python -m venv .local/backend-venv

@@ -508,19 +508,13 @@ if ($console -ne [IntPtr]::Zero) {
     if ([LayerLensUi.Native]::GetConsoleProcessList($attached, 4) -le 1) { [void][LayerLensUi.Native]::ShowWindow($console, 0) }
 }
 
-# The top-level double-click entry is the logo shortcut. Explorer only finds its icon through an
-# absolute path, so rewrite it when missing or when the icon does not point at this checkout
-# (fresh clone ships a relative icon; the project folder may have moved).
-$lnkPath = Join-Path $root 'LayerLens 控制台.lnk'
-$lnkIcon = ''
-if (Test-Path -LiteralPath $lnkPath) {
-    try { $lnkIcon = (New-Object -ComObject WScript.Shell).CreateShortcut($lnkPath).IconLocation } catch { }
-}
-if ($lnkIcon -ne ((Join-Path $root 'assets\LayerLens.ico') + ',0')) {
-    $shortcutScript = Join-Path $root 'scripts\New-ConsoleShortcut.ps1'
-    if (Test-Path -LiteralPath $shortcutScript) {
-        Start-Process powershell.exe -WindowStyle Hidden -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ('"' + $shortcutScript + '"') | Out-Null
-    }
+# The top-level double-click entry is the logo shortcut. Explorer resolves neither relative
+# launch paths nor relative icons against the shortcut's folder, so the distributed placeholder
+# (and stale absolute paths after a project move) must be rewritten to this checkout. -IfNeeded
+# checks the target, working directory and icon, and does nothing when they are already right.
+$shortcutScript = Join-Path $root 'scripts\New-ConsoleShortcut.ps1'
+if (Test-Path -LiteralPath $shortcutScript) {
+    Start-Process powershell.exe -WindowStyle Hidden -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ('"' + $shortcutScript + '"'), '-IfNeeded' | Out-Null
 }
 
 # ---- Background work -------------------------------------------------------------------------

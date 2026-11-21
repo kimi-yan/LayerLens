@@ -18,14 +18,14 @@ engine/adapter/      引擎适配层：启动器、运行脚本、固定版本�
 scripts/
   control-panel.ps1  控制台窗口（WinForms，由顶层快捷方式或 scripts\LayerLens 控制台.cmd 打开）
   New-ConsoleShortcut.ps1  生成带 Logo 的顶层双击快捷方式
-  LayerLens 控制台.cmd  备用双击入口（顶层快捷方式缺失时用它启动一次即自动补齐）
+  LayerLens 控制台.cmd  备用双击入口（顶层快捷方式缺失或双击没反应时，用它启动一次即自动修复）
   setup-engine.ps1   安装一个推理引擎
   doctor.py          检查硬件和引擎状态
   verify_exports.py  从运行中的服务下载结果并校验
   engines/           权重下载与 NF4 转换（由 setup-engine.ps1 调用）
   bench/             显存与耗时测量脚本
 docs/                安装、架构、API 和交接文档
-LayerLens 控制台.lnk  顶层双击入口（带 Logo，随仓库分发）
+LayerLens 控制台.lnk  顶层双击入口（带 Logo，随仓库分发，首次启动后自动适配本机路径）
 Start-LayerLens.ps1  启动服务（命令行方式）
 使用指南.html         面向使用者的图文指南
 
@@ -38,7 +38,7 @@ output/              测量与审阅输出
 
 ## 快速开始
 
-不熟悉命令行的话，双击项目顶层的 **`LayerLens 控制台.lnk`**（带项目 Logo 的快捷方式，随仓库自带，项目放在哪个文件夹都能用；新克隆时它显示的可能是 PowerShell 图标，双击打开一次控制台后就会换成 Logo；丢失时双击一次 `scripts\LayerLens 控制台.cmd` 会自动补回来）：在窗口里点「启动服务」，没装的引擎旁边点「安装」，再点「打开工作台」。完整说明见 [使用指南.html](使用指南.html)。
+不熟悉命令行的话，双击项目顶层的 **`LayerLens 控制台.lnk`**（带项目 Logo 的快捷方式）打开控制台：在窗口里点「启动服务」，没装的引擎旁边点「安装」，再点「打开工作台」。刚克隆的项目里这个快捷方式还是占位版，直接双击会没反应——先双击一次 `scripts\LayerLens 控制台.cmd`（或运行 `.\Start-LayerLens.ps1`），它会把快捷方式改写成本机路径，之后顶层快捷方式就能正常双击了；项目文件夹搬家后同样启动一次即可自动修复。完整说明见 [使用指南.html](使用指南.html)。
 
 下面是命令行方式。需要 Windows 10/11、Python 3.11 或更高版本（后端用，测试环境 3.13）和 Node.js 20.19 或更高版本（构建前端用）。
 
