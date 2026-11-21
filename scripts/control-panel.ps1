@@ -508,9 +508,15 @@ if ($console -ne [IntPtr]::Zero) {
     if ([LayerLensUi.Native]::GetConsoleProcessList($attached, 4) -le 1) { [void][LayerLensUi.Native]::ShowWindow($console, 0) }
 }
 
-# The top-level double-click entry is the logo shortcut; recreate it when missing (fresh checkout).
+# The top-level double-click entry is the logo shortcut. Explorer only finds its icon through an
+# absolute path, so rewrite it when missing or when the icon does not point at this checkout
+# (fresh clone ships a relative icon; the project folder may have moved).
 $lnkPath = Join-Path $root 'LayerLens 控制台.lnk'
-if (-not (Test-Path -LiteralPath $lnkPath)) {
+$lnkIcon = ''
+if (Test-Path -LiteralPath $lnkPath) {
+    try { $lnkIcon = (New-Object -ComObject WScript.Shell).CreateShortcut($lnkPath).IconLocation } catch { }
+}
+if ($lnkIcon -ne ((Join-Path $root 'assets\LayerLens.ico') + ',0')) {
     $shortcutScript = Join-Path $root 'scripts\New-ConsoleShortcut.ps1'
     if (Test-Path -LiteralPath $shortcutScript) {
         Start-Process powershell.exe -WindowStyle Hidden -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ('"' + $shortcutScript + '"') | Out-Null
