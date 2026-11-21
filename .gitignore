@@ -11,5 +11,6 @@
 /.taste-skill/
 /.pytest_cache/
 __pycache__/
-# Top-level shortcut with the project logo is generated per machine by the control panel.
+# The top-level shortcut ships with the repository (relative paths); any other .lnk stays local.
 *.lnk
+!/LayerLens 控制台.lnk

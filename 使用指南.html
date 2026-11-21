@@ -174,7 +174,7 @@
       <h2><span class="n">01</span>三分钟上手</h2>
       <p class="sub">第一次使用按下面四步走。日常使用只需要第 1 步和第 4 步。</p>
       <div class="quick">
-        <div><span class="k">STEP 1</span><b>双击打开控制台</b><span>顶层的 <span class="file">LayerLens 控制台.lnk</span>（带项目 Logo）。若它不在（比如刚拿到项目），先双击一次 <span class="file">scripts\LayerLens 控制台.cmd</span>，顶层快捷方式会自动补出来。</span></div>
+        <div><span class="k">STEP 1</span><b>双击打开控制台</b><span>顶层的 <span class="file">LayerLens 控制台.lnk</span>（带项目 Logo，随项目自带，放在哪个文件夹都能用）。万一快捷方式丢失，先双击一次 <span class="file">scripts\LayerLens 控制台.cmd</span>，它会自动补出来。</span></div>
         <div><span class="k">STEP 2</span><b>点「启动服务」</b><span>第一次会自动安装依赖、构建页面，需要几分钟；以后十几秒就好。</span></div>
         <div><span class="k">STEP 3</span><b>点引擎旁的「安装」</b><span>只在第一次需要。会打开一个窗口自动下载，可以只装一个引擎。</span></div>
         <div><span class="k">STEP 4</span><b>点「打开工作台」</b><span>浏览器打开后，点右上角「新建任务」上传图片。</span></div>
@@ -225,7 +225,7 @@
         <li>还有任务在处理或排队时点「停止服务」，会先弹出确认框，写明正在处理和排队的个数。确认停止后，正在处理的任务记为中断，之后可以在任务中心重试。</li>
         <li>8765 端口被其他程序占用时，控制台不会去结束那个程序，只提示「无法停止」。</li>
         <li>控制台只能打开一个。再双击时会把已经打开的窗口切到前面。</li>
-        <li>双击入口是顶层的「LayerLens 控制台.lnk」（带项目 Logo），控制台首次启动时自动生成；等效的 <span class="file">.cmd</span> 在 <code>scripts\</code> 里。资源管理器中 .cmd 的图标由 Windows 按文件类型统一配、单个文件改不了，所以用快捷方式承载 Logo。想往桌面也放一个、或项目文件夹搬家后修复路径：运行 <code>scripts\New-ConsoleShortcut.ps1</code>（加 <code>-Desktop</code> 放桌面）。</li>
+        <li>双击入口是顶层的「LayerLens 控制台.lnk」（带项目 Logo，随项目自带，内部用相对路径记录位置，项目文件夹放在哪里都能用）；等效的 <span class="file">.cmd</span> 在 <code>scripts\</code> 里，快捷方式丢失时双击它会自动补出来。资源管理器中 .cmd 的图标由 Windows 按文件类型统一配、单个文件改不了，所以用快捷方式承载 Logo。想往桌面也放一个、或修复桌面快捷方式的路径：运行 <code>scripts\New-ConsoleShortcut.ps1</code>（加 <code>-Desktop</code> 放桌面；桌面快捷方式记录绝对路径，项目文件夹搬家后重跑一次即可）。</li>
         <li>引擎安装窗口开着时再点「安装」，会切到那个窗口，不会重复安装。</li>
         <li>服务的完整输出保存在 <code>data\logs\server.log</code>，每次启动重新开始记录。</li>
       </ul>
@@ -364,7 +364,7 @@ python scripts\doctor.py                       <span class="c"># 环境自检</s
       <div class="note warn">提示「禁止运行脚本」时，先执行 <code>Set-ExecutionPolicy -Scope CurrentUser RemoteSigned</code>。双击控制台不受这个限制。</div>
       <table>
         <tr><th style="width:36%">路径</th><th>内容</th></tr>
-        <tr><td><span class="file">LayerLens 控制台.lnk</span></td><td>顶层双击入口，带项目 Logo；控制台首次启动时自动生成</td></tr>
+        <tr><td><span class="file">LayerLens 控制台.lnk</span></td><td>顶层双击入口，带项目 Logo，随项目自带（相对路径）</td></tr>
         <tr><td><span class="file">scripts\LayerLens 控制台.cmd</span></td><td>备用双击入口，与快捷方式等效</td></tr>
         <tr><td><span class="file">使用指南.html</span></td><td>本指南</td></tr>
         <tr><td><code>frontend/</code> <code>backend/</code></td><td>工作台页面和后端服务</td></tr>

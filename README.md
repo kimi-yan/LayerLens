@@ -25,11 +25,11 @@ scripts/
   engines/           权重下载与 NF4 转换（由 setup-engine.ps1 调用）
   bench/             显存与耗时测量脚本
 docs/                安装、架构、API 和交接文档
+LayerLens 控制台.lnk  顶层双击入口（带 Logo，相对路径，随仓库分发）
 Start-LayerLens.ps1  启动服务（命令行方式）
 使用指南.html         面向使用者的图文指南
 
 以下目录只在本机生成，不入库：
-LayerLens 控制台.lnk  顶层双击快捷方式（带 Logo，控制台首次启动自动生成）
 .local/              Python 环境（后端与各引擎）
 engine/see-through/  See-through 上游代码
 data/                任务、模型权重、下载缓存和服务日志（data/logs）
@@ -38,7 +38,7 @@ output/              测量与审阅输出
 
 ## 快速开始
 
-不熟悉命令行的话，双击项目顶层的 **`LayerLens 控制台.lnk`**（带项目 Logo 的快捷方式；刚拿到项目没有它时，双击一次 `scripts\LayerLens 控制台.cmd` 会自动生成）：在窗口里点「启动服务」，没装的引擎旁边点「安装」，再点「打开工作台」。完整说明见 [使用指南.html](使用指南.html)。
+不熟悉命令行的话，双击项目顶层的 **`LayerLens 控制台.lnk`**（带项目 Logo 的快捷方式，随仓库自带，用相对路径记录位置，项目放在哪个文件夹都能用；丢失时双击一次 `scripts\LayerLens 控制台.cmd` 会自动补回来）：在窗口里点「启动服务」，没装的引擎旁边点「安装」，再点「打开工作台」。完整说明见 [使用指南.html](使用指南.html)。
 
 下面是命令行方式。需要 Windows 10/11、Python 3.11 或更高版本（后端用，测试环境 3.13）和 Node.js 20.19 或更高版本（构建前端用）。
 
