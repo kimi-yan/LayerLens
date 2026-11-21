@@ -1,0 +1,15 @@
+# Local environments, weights, jobs and run output never go into the repository.
+/.local/
+/data/
+/output/
+/.tmpfiles/
+# Upstream See-through checkout; scripts/setup-engine.ps1 clones it at the pinned commit.
+/engine/see-through/
+/frontend/node_modules/
+/frontend/dist/
+/.playwright-cli/
+/.taste-skill/
+/.pytest_cache/
+__pycache__/
+# Top-level shortcut with the project logo is generated per machine by the control panel.
+*.lnk

@@ -1,0 +1,7 @@
+# Isolated See-through runtime (.local/seethrough-venv, Python 3.12).
+# Install with the PyTorch CUDA 12.6 index as an extra index; scripts/setup-engine.ps1 does this.
+# Upstream pins cu128; cu126 is what the 12 GB baseline in docs/engines.md was measured with.
+torch==2.8.0+cu126
+torchvision==0.23.0+cu126
+torchaudio==2.8.0+cu126
+-r ../see-through/requirements.txt

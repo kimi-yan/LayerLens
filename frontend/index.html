@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LayerLens · 层析镜 — 本地 AI 图层拆解工作台</title>
+
+</head>
+<body class="flex flex-col h-screen select-none">
+
+  <!-- =========================================================
+       1. UNIFIED COMPACT TOP BAR (48px)
+       ========================================================= -->
+  <header class="h-14 shrink-0 surface-panel border-b border-hairline px-4 flex items-center justify-between gap-3 z-30">
+    <!-- Left: Brand + Primary Navigation -->
+    <div class="flex items-center gap-3 min-w-0">
+      <div class="flex items-center gap-2.5 shrink-0 cursor-pointer" onclick="switchMainView('workbench')">
+        <!-- Crisp geometric LayerLens logo -->
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="12 3 21 8.5 12 14 3 8.5 12 3"></polygon>
+          <polyline points="3 13 12 18.5 21 13" opacity="0.65"></polyline>
+          <polyline points="3 17.5 12 22 21 17.5" opacity="0.35"></polyline>
+        </svg>
+        <span id="brand-wordmark" class="font-semibold tracking-tight text-[16px] text-main">LayerLens<span style="color:var(--accent)">.</span></span>
+      </div>
+
+      <div class="h-5 w-px bg-[var(--border-hairline)] hidden sm:block"></div>
+
+      <!-- Segmented View Switcher -->
+      <nav class="seg flex items-center p-0.5 rounded-lg surface-elevated border border-hairline">
+        <button id="nav-workbench" onclick="switchMainView('workbench')"
+          class="px-3.5 py-1.5 rounded-md text-[14px] font-medium transition-all flex items-center gap-2">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
+          <span>图层工作台</span>
+        </button>
+        <button id="nav-tasks" onclick="switchMainView('tasks')"
+          class="px-3.5 py-1.5 rounded-md text-[14px] font-medium transition-all flex items-center gap-2">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/></svg>
+          <span>任务中心</span>
+          <span id="nav-task-count" class="font-mono-num text-[12px] px-2 py-0.2 rounded-full bg-[var(--bg-hover)] text-sub">0</span>
+        </button>
+      </nav>
+    </div>
+
+    <!-- Center: Active Project & Engine Quick Switcher -->
+    <div id="topbar-project-pill" class="relative hidden xl:flex items-center min-w-0">
+      <button id="project-dropdown-toggle" onclick="toggleProjectDropdown(event)" aria-haspopup="true" aria-expanded="false" aria-controls="project-dropdown"
+        class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg surface-elevated border border-hairline hover:border-strong transition-colors max-w-[420px]">
+        <span id="topbar-filename" class="text-[14px] font-medium text-main truncate">尚无已拆解项目</span>
+        <span id="topbar-filetime" class="hidden 2xl:inline text-[12px] text-mute font-mono-num shrink-0"></span>
+        <span id="topbar-engine-badge" class="text-[12px] font-mono-num px-2 py-0.5 rounded font-medium shrink-0"></span>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" stroke-width="1.8"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+
+      <!-- Quick Project Dropdown -->
+      <div id="project-dropdown" class="hidden absolute top-full left-1/2 -translate-x-1/2 mt-1.5 w-[460px] max-w-[92vw] rounded-xl float-hud z-50 flex-col overflow-hidden"
+        role="dialog" aria-label="切换已拆解项目">
+        <div class="p-2.5 pb-2 border-b border-hairline space-y-2">
+          <div class="flex items-center justify-between px-1">
+            <span class="text-[13px] font-semibold text-main">切换已拆解项目</span>
+            <span id="project-dropdown-count" class="text-[12px] text-mute font-mono-num"></span>
+          </div>
+          <div class="relative flex items-center">
+            <svg class="absolute left-2.5 text-mute pointer-events-none" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input id="project-dropdown-search" type="search" autocomplete="off" maxlength="150" aria-label="搜索已拆解项目" placeholder="按文件名或日期筛选，如 coffee、11-21"
+              class="w-full h-9 pl-8 pr-3 rounded-lg surface-elevated border border-hairline text-[13px] text-main placeholder-[var(--text-muted)] focus:outline-none focus:border-strong" />
+          </div>
+        </div>
+        <div id="project-dropdown-list" class="project-list overflow-y-auto p-1.5" role="listbox" aria-label="已拆解项目"></div>
+        <div class="flex items-center justify-between gap-2 px-3 py-2 border-t border-hairline text-[12px] text-mute">
+          <span><kbd class="dd-kbd">↑</kbd><kbd class="dd-kbd">↓</kbd> 选择 · <kbd class="dd-kbd">Enter</kbd> 打开 · <kbd class="dd-kbd">Esc</kbd> 关闭</span>
+          <button type="button" onclick="openFinishedTasks()" class="text-[12px] text-sub hover:text-[var(--text-primary)] underline-offset-2 hover:underline">在任务中心查看全部 →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: Hardware VRAM Status, Theme Toggle, New Task CTA -->
+    <div class="flex items-center gap-2.5 shrink-0">
+      <!-- Hardware Status Pill with Tooltip -->
+      <div tabindex="0" aria-describedby="gpu-details" class="relative group hidden lg:flex items-center gap-2.5 px-3 py-1.5 rounded-lg surface-elevated border border-hairline cursor-default focus:outline-none focus-visible:border-strong">
+        <span class="w-2 h-2 rounded-full" style="background-color: var(--text-muted);"></span>
+        <span id="gpu-chip" class="font-mono-num text-[13px] text-sub">读取 GPU…</span>
+        <!-- Hover / focus tooltip -->
+        <div role="tooltip" class="hidden group-hover:block group-focus-within:block absolute top-full right-0 mt-1.5 w-96 p-4 rounded-xl float-hud z-50 text-[13px]">
+          <div id="gpu-details" class="space-y-1.5 text-sub"></div>
+        </div>
+      </div>
+
+      <!-- Theme Toggle (Dark / Light) -->
+      <button id="theme-toggle-btn" onclick="toggleTheme()" title="切换深色 / 浅色工作室主题"
+        class="w-10 h-10 rounded-lg btn-outline flex items-center justify-center">
+        <svg id="icon-sun" class="hidden" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+        <svg id="icon-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+      </button>
+
+      <!-- Primary CTA -->
+      <button onclick="openNewTaskModal()" aria-label="新建任务"
+        class="h-10 px-3.5 rounded-lg btn-accent text-[14px] flex items-center gap-2">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        <span>新建任务</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- =========================================================
+       VIEW 1: 图层工作台 (3-Column Full-Viewport Studio)
+       ========================================================= -->
+  <main id="view-workbench" class="flex-1 flex min-h-0 overflow-hidden">
+
+    <!-- LEFT PANEL: 图层管理 (280px) -->
+    <aside class="w-[320px] shrink-0 surface-panel border-r border-hairline flex flex-col min-h-0">
+      <!-- Panel Header -->
+      <div class="px-4 py-3 border-b border-hairline flex items-center justify-between">
+        <div class="flex items-center gap-2.5">
+          <span class="text-[14px] font-semibold text-main">图层结构</span>
+          <span id="layer-count-pill" class="font-mono-num text-[12px] px-2 py-0.5 rounded surface-elevated border border-hairline text-sub">0 层</span>
+        </div>
+        <div class="flex items-center gap-1.5">
+          <!-- Multi-select Toggle -->
+          <button id="btn-multiselect" onclick="toggleMultiSelect()" title="多选图层"
+            class="px-2 py-1.5 rounded text-[13px] btn-ghost">多选</button>
+          <!-- View Mode Toggle (List / Grid) -->
+          <div class="seg flex items-center p-0.5 rounded-md surface-elevated border border-hairline" data-seg-tone="muted">
+            <button id="btn-view-list" onclick="setLayerViewMode('list')" title="列表视图"
+              class="p-1 rounded transition-colors">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+            </button>
+            <button id="btn-view-grid" onclick="setLayerViewMode('grid')" title="网格缩略图视图"
+              class="p-1 rounded transition-colors">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Search Filter -->
+      <div class="px-3.5 py-2.5 border-b border-hairline">
+        <div class="relative flex items-center">
+          <svg class="absolute left-2.5 text-mute pointer-events-none" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input id="layer-search" type="text" placeholder="筛选图层名称..." oninput="renderLayerList()"
+            class="w-full h-9 pl-9 pr-2.5 rounded-md surface-elevated border border-hairline text-[14px] text-main placeholder-[var(--text-muted)] focus:outline-none focus:border-strong" />
+        </div>
+      </div>
+
+      <!-- Selected Layer Inspector & Contextual Engine Actions -->
+      <div class="px-4 py-3.5 border-b border-hairline surface-elevated/50 space-y-2.5">
+        <div class="flex items-center justify-between gap-2.5">
+          <div class="min-w-0">
+            <div class="text-[12px] text-mute uppercase tracking-wider">当前选中图层</div>
+            <div id="inspector-layer-name" class="text-[14px] font-semibold text-main truncate mt-0.5">—</div>
+          </div>
+          <div role="group" aria-label="图层显示范围" data-seg-tone="raised" class="seg visibility-seg flex items-center p-0.5 rounded-lg surface-elevated border border-hairline shrink-0">
+            <button id="btn-show-all" onclick="resetAllLayersVisibility()" title="显示全部图层，并清除所有隐藏"
+              class="h-8 px-2.5 rounded-md text-[13px] font-medium flex items-center gap-1.5">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><polygon points="12 2 22 7 12 12 2 7 12 2"/><polyline points="2 12 12 17 22 12"/><polyline points="2 17 12 22 22 17"/></svg>
+              <span>全显</span>
+            </button>
+            <button id="btn-solo" data-thumb="accent" onclick="toggleSoloLayer()" title="仅显示当前图层，再次点击退出 (快捷键 S)"
+              class="h-8 px-2.5 rounded-md text-[13px] font-medium flex items-center gap-1.5">
+              <kbd class="font-mono-num text-[11px] font-bold leading-none px-1 py-0.5 rounded">S</kbd>
+              <span>独显</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Live Opacity Slider -->
+        <div class="space-y-1">
+          <div class="flex items-center justify-between text-[13px]">
+            <span class="text-sub">不透明度</span>
+            <span id="inspector-opacity-val" class="font-mono-num text-main">100%</span>
+          </div>
+          <input id="inspector-opacity-slider" type="range" min="0" max="100" value="100"
+            oninput="updateSelectedLayerOpacity(this.value)"
+            class="w-full studio-slider" />
+        </div>
+
+        <!-- Layer position offset -->
+        <div class="space-y-1.5">
+          <div class="flex items-center justify-between text-[13px]">
+            <span class="text-sub">位置偏移</span>
+            <span id="pos-moved-note" class="text-[12px] text-mute hidden"></span>
+          </div>
+          <div class="pos-row">
+            <label class="pos-field"><span>X</span><input id="inspector-offset-x" type="number" step="1" inputmode="numeric" aria-label="X 偏移（像素）" onchange="setSelectedLayerOffset('x', this.value)"><em>px</em></label>
+            <label class="pos-field"><span>Y</span><input id="inspector-offset-y" type="number" step="1" inputmode="numeric" aria-label="Y 偏移（像素）" onchange="setSelectedLayerOffset('y', this.value)"><em>px</em></label>
+            <button id="btn-reset-pos" type="button" onclick="resetSelectedLayerPosition()" class="pos-reset" title="还原此图层到原位 (0, 0)" aria-label="还原此图层位置">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"/><polyline points="3 4 3 10 9 10"/></svg>
+            </button>
+          </div>
+          <button id="btn-reset-all-pos" type="button" onclick="resetAllLayerPositions()" class="hidden pos-reset-all" title="清除所有图层的位置偏移，全部回到原位">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"/><polyline points="3 4 3 10 9 10"/></svg>
+            <span>全部图层还原到原位</span>
+          </button>
+        </div>
+
+        <!-- Dynamic Engine Contextual Actions -->
+        <div class="pt-1 border-t border-hairline">
+          <div class="flex items-center justify-between mb-1.5 mt-1">
+            <span id="contextual-action-label" class="text-[12px] text-mute">二次精细拆分 · See-through</span>
+            <span class="text-[11px] text-mute">生成新任务</span>
+          </div>
+          <div id="contextual-action-buttons" role="radiogroup" aria-label="拆分方式" data-seg-tone="split" class="seg split-track grid grid-cols-2 gap-1"></div>
+          <div id="split-confirm" class="hidden split-confirm mt-2 rounded-lg p-2.5">
+            <p id="split-summary" class="text-[12px] text-sub leading-relaxed"></p>
+            <div class="flex gap-2 mt-2">
+              <button type="button" onclick="cancelSplit()" class="h-8 px-3 rounded-md btn-outline text-[13px]">取消</button>
+              <button type="button" id="split-submit" onclick="submitSplit()" class="flex-1 h-8 px-3 rounded-md btn-accent text-[13px]">加入队列</button>
+            </div>
+          </div>
+          <p id="contextual-action-note" class="hidden mt-1.5 text-[12px] text-mute leading-relaxed"></p>
+        </div>
+      </div>
+
+      <!-- Scrollable Layer Stack -->
+      <div id="layer-stack-container" class="flex-1 overflow-y-auto p-3">
+        <!-- Populated by JS -->
+      </div>
+    </aside>
+
+    <!-- CENTER VIEWPORT: Hero Interactive Canvas -->
+    <section class="flex-1 relative surface-canvas viewport-grid flex flex-col items-center justify-center overflow-hidden min-w-0">
+
+      <!-- Floating Top View Mode Pill Bar -->
+      <div class="absolute top-3.5 left-1/2 -translate-x-1/2 z-20 seg flex items-center p-1 rounded-xl float-hud">
+        <button data-mode="composite" onclick="setCanvasMode('composite')" class="canvas-mode-btn px-3.5 py-2 rounded-lg text-[14px] font-medium transition-all">分层合成</button>
+        <button data-mode="original" onclick="setCanvasMode('original')" class="canvas-mode-btn px-3.5 py-2 rounded-lg text-[14px] font-medium transition-all">原始图片</button>
+        <button data-mode="compare" onclick="setCanvasMode('compare')" class="canvas-mode-btn px-3.5 py-2 rounded-lg text-[14px] font-medium transition-all">原图对比</button>
+        <button data-mode="depth" onclick="setCanvasMode('depth')" class="canvas-mode-btn px-3.5 py-2 rounded-lg text-[14px] font-medium transition-all">深度视图</button>
+        <button data-mode="mask" onclick="setCanvasMode('mask')" class="canvas-mode-btn px-3.5 py-2 rounded-lg text-[14px] font-medium transition-all">透明蒙版</button>
+      </div>
+
+      <!-- Mode Helper Caption (subtle, non-intrusive) -->
+      <div id="canvas-mode-hint" class="absolute top-[72px] left-1/2 -translate-x-1/2 z-10 text-[13px] text-mute pointer-events-none">
+        按叠放顺序实时渲染可见图层与不透明度
+      </div>
+
+      <!-- Main Artwork Stage -->
+      <div id="canvas-stage-wrapper" class="relative flex items-center justify-center w-full h-full p-16 overflow-hidden" style="touch-action:none">
+        <div id="studio-empty" class="hidden text-center space-y-3 p-5 max-w-sm"><p id="studio-empty-title" class="text-main font-semibold text-[16px]">还没有拆层结果</p><p id="studio-empty-text" class="hidden text-[13px] text-sub leading-relaxed"></p><button id="studio-empty-action" onclick="openNewTaskModal()" class="h-10 px-5 rounded-lg btn-accent text-[14px]">新建任务</button></div>
+        <div id="artwork-frame"
+          class="relative rounded-lg overflow-hidden border border-strong transition-transform duration-150 ease-out shadow-2xl bg-checker-lg"
+          style="transform: scale(1);">
+
+          <!-- Base SVG Render Container (Composite / Original / Depth / Mask) -->
+          <div id="artwork-svg-layer" class="w-full h-full relative"></div>
+          <div id="move-overlay" class="absolute inset-0 pointer-events-none" aria-hidden="true"></div>
+
+          <!-- Compare Split-Screen Overlay (Visible only in 'compare' mode) -->
+          <div id="compare-overlay" class="hidden absolute inset-0 pointer-events-none">
+            <!-- Left Side: Original Flat Artwork clipped by slider % -->
+            <div id="compare-left-clip" class="absolute inset-0 overflow-hidden" style="clip-path: inset(0 50% 0 0);">
+              <div id="compare-original-svg" class="w-full h-full"></div>
+              <span class="absolute top-3 left-3 px-2.5 py-0.5 rounded bg-black/70 text-white text-[12px] font-medium tracking-wide">原始图片</span>
+            </div>
+            <!-- Right Side Label -->
+            <span class="absolute top-3 right-3 px-2.5 py-0.5 rounded bg-black/70 text-[12px] font-medium tracking-wide" style="color:var(--accent)">拆解合成</span>
+
+            <!-- Draggable Divider Handle -->
+            <div id="compare-handle"
+              class="absolute top-0 bottom-0 w-0.5 cursor-ew-resize pointer-events-auto flex items-center justify-center"
+              style="left: 50%; background-color: var(--accent);">
+              <div class="w-9 h-9 rounded-full flex items-center justify-center shadow-lg border border-black/30"
+                style="background-color: var(--accent); color: var(--accent-fg);">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="15 18 9 12 15 6" transform="translate(-3,0)"/><polyline points="9 18 15 12 9 6" transform="translate(3,0)"/></svg>
+              </div>
+            </div>
+            <input id="compare-range" type="range" min="0" max="100" value="50" aria-label="原图对比分界线" />
+          </div>
+
+        </div>
+      </div>
+
+      <div id="move-readout" class="fixed z-40 px-2 py-1 rounded-md float-hud font-mono-num text-[12px] text-main pointer-events-none" data-show="false" aria-hidden="true"></div>
+
+      <!-- Floating Bottom HUD Bar -->
+      <div id="canvas-hud" class="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 pl-1.5 pr-3 py-1.5 rounded-xl float-hud max-w-[95%] whitespace-nowrap">
+        <!-- Left: Resolution & Engine Meta -->
+        <!-- Canvas tools: move layer (V) / pan canvas (H) -->
+        <div id="tool-switch" role="radiogroup" aria-label="画布工具" class="tool-switch flex items-center gap-0.5 p-0.5 rounded-lg">
+          <button id="tool-move" type="button" role="radio" data-tool="move" aria-checked="true" aria-label="移动图层 (V)" data-tip="移动图层 · V" onclick="setCanvasTool('move')"
+            class="tool-btn h-8 pl-2 pr-1.5 rounded-md flex items-center gap-1.5">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 3l7.5 17 2.2-6.8L20.5 11z"/></svg>
+            <kbd class="tool-kbd">V</kbd>
+          </button>
+          <button id="tool-pan" type="button" role="radio" data-tool="pan" aria-checked="false" aria-label="平移画布 (H，按住空格临时切换)" data-tip="平移画布 · H / 按住空格" onclick="setCanvasTool('pan')"
+            class="tool-btn h-8 pl-2 pr-1.5 rounded-md flex items-center gap-1.5">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 11V6a2 2 0 0 0-4 0v5M14 10V4a2 2 0 0 0-4 0v7M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.9-5.9-2.4L3.4 16a2 2 0 0 1 3.2-2.4L8 15"/></svg>
+            <kbd class="tool-kbd">H</kbd>
+          </button>
+        </div>
+        <div class="h-5 w-px bg-[var(--border-hairline)]"></div>
+        <div id="hud-meta" class="hidden 2xl:flex items-center gap-2.5 pr-3 border-r border-hairline">
+          <span class="w-2 h-2 rounded-full" style="background-color: var(--accent);"></span>
+          <span id="hud-meta-text" class="font-mono-num text-[13px] text-sub whitespace-nowrap">—</span>
+        </div>
+
+        <!-- Center: Backdrop Switcher Dots -->
+        <div class="flex items-center gap-2 pr-3 border-r border-hairline" title="切换画布底色">
+          <button onclick="setBackdrop('checker')" data-bg="checker" title="透明棋盘格"
+            class="backdrop-dot w-5 h-5 rounded-full bg-checker-sm border border-strong transition-transform"></button>
+          <button onclick="setBackdrop('dark')" data-bg="dark" title="中性暗灰"
+            class="backdrop-dot w-5 h-5 rounded-full bg-[#24272D] border border-strong transition-transform"></button>
+          <button onclick="setBackdrop('black')" data-bg="black" title="纯黑底色"
+            class="backdrop-dot w-5 h-5 rounded-full bg-[#050505] border border-strong transition-transform"></button>
+          <button onclick="setBackdrop('white')" data-bg="white" title="纯白底色"
+            class="backdrop-dot w-5 h-5 rounded-full bg-[#FFFFFF] border border-strong transition-transform"></button>
+        </div>
+
+        <!-- Right: Zoom Controls + Quick Rerun -->
+        <div class="flex items-center gap-1.5">
+          <button onclick="adjustZoom(-0.15)" class="w-8 h-8 rounded btn-ghost flex items-center justify-center" title="缩小">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          </button>
+          <button id="hud-zoom-val" onclick="resetZoom()" class="font-mono-num text-[13px] text-main w-14 text-center hover:underline" title="重置为 100%">100%</button>
+          <button onclick="adjustZoom(0.15)" class="w-8 h-8 rounded btn-ghost flex items-center justify-center" title="放大">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          </button>
+          <div class="h-4 w-px bg-[var(--border-hairline)] mx-1"></div>
+          <button id="btn-quick-rerun" data-needs-project onclick="triggerQuickRerun()" class="h-8 px-2.5 rounded btn-ghost text-[13px] flex items-center gap-1.5 whitespace-nowrap" title="使用当前参数重新推理">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+            <span class="hidden xl:inline">原参数重跑</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- RIGHT PANEL: 导出交付与参数 (280px) -->
+    <aside class="w-[320px] shrink-0 surface-panel border-l border-hairline flex flex-col min-h-0 overflow-y-auto">
+
+      <!-- Section 1: Export & Deliverables -->
+      <div class="p-4 border-b border-hairline space-y-2.5">
+        <div class="flex items-center justify-between">
+          <span class="text-[14px] font-semibold text-main">导出交付</span>
+          <span class="text-[12px] text-mute font-mono-num">RGBA</span>
+        </div>
+
+        <div id="export-cards-container" class="space-y-2">
+          <!-- Dynamically rendered per engine -->
+        </div>
+
+        <p id="export-offset-note" class="hidden text-[12px] text-mute leading-relaxed">原始 PSD / ZIP 保持初始位置；合成 PNG 包含当前画布位移。</p>
+
+        <!-- Compact Quick Export Row -->
+        <div class="grid grid-cols-2 gap-2 pt-1">
+          <button data-needs-project onclick="exportComposite()" class="h-9 rounded-md btn-outline text-[13px] font-medium">导出合成 PNG</button>
+          <button data-needs-project onclick="exportSelectedLayer()" class="h-9 rounded-md btn-outline text-[13px] font-medium">导出选中层</button>
+        </div>
+      </div>
+
+      <!-- Section 2: Current Batch Switcher -->
+      <div class="p-4 border-b border-hairline space-y-2.5">
+        <div class="flex items-center justify-between">
+          <span class="text-[14px] font-semibold text-main">当前批次</span>
+          <span id="batch-summary" class="font-mono-num text-[13px] text-sub">—</span>
+        </div>
+
+        <div id="batch-switcher-list" class="grid grid-cols-2 gap-2.5">
+          
+        </div>
+
+        <button id="batch-export-workbench" onclick="downloadBatch()"
+          class="w-full h-9 rounded-md btn-outline text-[13px] font-medium flex items-center justify-center gap-2">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          <span>下载批次 ZIP</span>
+        </button>
+      </div>
+
+      <!-- Section 3: Inference Parameter Snapshot -->
+      <div class="p-4 space-y-2.5">
+        <div class="flex items-center justify-between">
+          <span class="text-[14px] font-semibold text-main">推理参数快照</span>
+          <span id="snapshot-duration" class="font-mono-num text-[12px] text-mute">—</span>
+        </div>
+
+        <div id="param-snapshot-list" class="rounded-lg surface-elevated border border-hairline p-3 space-y-1.5 text-[13px]">
+          <!-- Populated dynamically -->
+        </div>
+
+        <button data-needs-project onclick="openNewTaskModalWithCurrentParams()"
+          class="w-full h-9 rounded-md btn-ghost border border-hairline text-[13px] font-medium flex items-center justify-center gap-2">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          <span>载入此参数新建任务</span>
+        </button>
+      </div>
+    </aside>
+  </main>
+
+  <!-- =========================================================
+       VIEW 2: 任务中心 (Task Center)
+       ========================================================= -->
+  <main id="view-tasks" class="hidden flex-1 flex flex-col min-h-0 overflow-hidden bg-[var(--bg-app)]">
+    <div class="max-w-[1360px] w-full mx-auto px-6 py-5 flex flex-col flex-1 min-h-0">
+
+      <!-- Toolbar: Status Tabs + Engine Filter + Search + Batch Download -->
+      <div class="flex flex-wrap items-center justify-between gap-3 mb-4 shrink-0">
+        <div class="flex items-center gap-2.5 flex-wrap">
+          <!-- Status Segmented Tabs -->
+          <div id="task-status-tabs" data-seg-tone="muted" class="seg flex items-center max-w-full overflow-x-auto p-0.5 rounded-lg surface-panel border border-hairline">
+            <button data-status="all" onclick="setTaskFilterStatus('all')" class="task-tab px-3 py-1.5 rounded-md text-[14px] font-medium transition-colors">全部 <span class="font-mono-num text-[13px] opacity-70 ml-0.5" id="cnt-all">0</span></button>
+            <button data-status="running" onclick="setTaskFilterStatus('running')" class="task-tab px-3 py-1.5 rounded-md text-[14px] font-medium transition-colors"><span class="tab-live-dot" aria-hidden="true"></span>进行中 <span class="font-mono-num text-[13px] opacity-70 ml-0.5" id="cnt-running">0</span></button>
+            <button data-status="done" onclick="setTaskFilterStatus('done')" class="task-tab px-3 py-1.5 rounded-md text-[14px] font-medium transition-colors">已完成 <span class="font-mono-num text-[13px] opacity-70 ml-0.5" id="cnt-done">0</span></button>
+            <button data-status="failed" onclick="setTaskFilterStatus('failed')" class="task-tab px-3 py-1.5 rounded-md text-[14px] font-medium transition-colors">失败与取消 <span class="font-mono-num text-[13px] opacity-70 ml-0.5" id="cnt-failed">0</span></button>
+            <button data-status="trash" onclick="setTaskFilterStatus('trash')" class="task-tab px-3 py-1.5 rounded-md text-[14px] font-medium">回收站 <span class="font-mono-num text-[13px] opacity-70 ml-0.5" id="cnt-trash">0</span></button>
+          </div>
+
+          <!-- Engine Filter Select -->
+          <select id="task-engine-filter" aria-label="筛选推理引擎"
+            class="h-10 px-3 rounded-lg surface-panel border border-hairline text-[14px] text-main focus:outline-none focus:border-strong cursor-pointer">
+            <option value="all">全部推理引擎</option>
+            <option value="qwen">通用拆层</option>
+            <option value="seethrough">二次元角色拆层</option>
+          </select>
+        </div>
+
+        <div class="flex items-center gap-2.5">
+          <!-- Search Input -->
+          <div class="relative flex items-center">
+            <svg class="absolute left-2.5 text-mute pointer-events-none" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input id="task-search-input" type="search" aria-label="搜索任务" placeholder="按文件名搜索任务..."
+              class="w-64 h-10 pl-9 pr-3 rounded-lg surface-panel border border-hairline text-[14px] text-main placeholder-[var(--text-muted)] focus:outline-none focus:border-strong" />
+          </div>
+          <button id="batch-export-tasks" onclick="downloadBatch()"
+            class="h-10 px-3.5 rounded-lg btn-outline text-[14px] font-medium flex items-center gap-2">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            <span>下载当前批次 ZIP</span>
+          </button>
+        </div>
+      </div>
+
+      <div id="task-bulk" class="hidden shrink-0 items-center gap-2.5 px-3.5 py-2.5 mb-2 rounded-lg surface-panel border border-hairline"></div>
+      <!-- Clean Data Table Card -->
+      <div class="flex-1 surface-panel border border-hairline rounded-xl overflow-hidden flex flex-col min-h-0">
+        <!-- Table Header -->
+        <div class="task-table-head grid grid-cols-12 gap-4 px-5 py-3 border-b border-hairline surface-elevated/60 text-[13px] font-medium text-mute shrink-0">
+          <div class="col-span-4 flex items-center gap-2.5"><input type="checkbox" id="task-check-page" class="accent-[var(--accent)]" aria-label="全选本页" onchange="selectTaskPage(this.checked)" />任务与图片</div>
+          <div class="col-span-2">推理引擎</div>
+          <div class="col-span-3">状态与进度</div>
+          <div class="col-span-1 text-right">耗时</div>
+          <div class="col-span-2 text-right">操作</div>
+        </div>
+
+        <!-- Table Body -->
+        <div id="task-table-body" class="flex-1 overflow-y-auto divide-y divide-[var(--border-hairline)]">
+          <!-- Populated dynamically -->
+        </div>
+      </div>
+      <div id="task-pagination" class="hidden shrink-0 items-center justify-end gap-2.5 py-2.5 text-sub text-[13px]"></div>
+    </div>
+  </main>
+
+  <!-- =========================================================
+       MODAL: "+ 新建任务" (Multi-Engine Creation Dialog)
+       ========================================================= -->
+  <dialog id="new-task-modal" aria-labelledby="task-modal-title" class="fixed inset-0 z-50 items-center justify-center p-4 bg-black/60 backdrop-blur-[2px]">
+    <div class="w-full max-w-[800px] rounded-2xl surface-panel border border-strong shadow-2xl overflow-hidden modal-enter flex flex-col max-h-[94vh]">
+      <!-- Modal Header -->
+      <div class="px-5 py-4 border-b border-hairline flex items-center justify-between">
+        <div>
+          <h2 id="task-modal-title" class="text-[16px] font-semibold text-main">新建图像拆层任务</h2>
+          <p class="text-[13px] text-sub mt-0.5">选择适配画风的本地推理引擎并配置显存参数</p>
+        </div>
+        <button onclick="closeNewTaskModal()" class="w-9 h-9 rounded-lg btn-ghost flex items-center justify-center">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+
+      <!-- Modal Body -->
+      <div class="p-5 space-y-5 overflow-y-auto">
+
+        <input id="upload-input" type="file" accept=".png,.jpg,.jpeg,.webp,.bmp" multiple hidden />
+        <!-- Step 1: Upload Dropzone -->
+        <div>
+          <div class="flex items-baseline justify-between mb-2"><span class="text-[13px] font-medium text-sub">1. 上传目标图像</span><span class="text-[12px] text-mute">PNG · JPG · WebP · BMP，可批量</span></div>
+          <div id="modal-dropzone" role="button" tabindex="0" onclick="chooseFiles()" aria-describedby="modal-upload-meta" class="upload-zone">
+            <span class="upload-icon" aria-hidden="true">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4"/><polyline points="7 9 12 4 17 9"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>
+            </span>
+            <div class="min-w-0 flex-1">
+              <div id="modal-upload-filename" class="text-[15px] font-semibold text-main truncate">点击上传图片，或拖拽到这里</div>
+              <div id="modal-upload-meta" class="text-[13px] text-mute mt-0.5">支持透明底 PNG · 单张最多 32 MiB</div>
+            </div>
+            <span id="modal-upload-cta" class="upload-cta">选择图片</span>
+          </div>
+        </div>
+
+        <div id="modal-file-list" class="hidden space-y-1"></div><div id="modal-error" role="alert" class="hidden text-[14px]" style="color:var(--danger)"></div>
+        <!-- Step 2: Engine Selector Cards -->
+        <div>
+          <label class="block text-[13px] font-medium text-sub mb-2">2. 选择拆层推理引擎</label>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <!-- Engine B: general purpose (Qwen-Image-Layered) -->
+            <button type="button" id="engine-card-qwen" onclick="selectModalEngine('qwen')" class="engine-card" data-engine="qwen">
+              <span class="engine-card-check" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+              <span class="engine-card-title">通用拆层<span class="engine-card-tag">默认</span><span class="engine-card-missing">未安装</span></span>
+              <span class="engine-card-scope">海报 · 场景 · 商品 · 插画 · 摄影</span>
+              <span class="block text-[13px] text-sub leading-relaxed mt-2">不限画风，按画面元素拆成多个透明图层，自动补全被遮挡区域；可自选图层数并对单层递归细拆。</span>
+              <span class="engine-card-model">模型 · Qwen-Image-Layered</span>
+            </button>
+
+            <!-- Engine A: anime specialist (See-through V3) -->
+            <button type="button" id="engine-card-seethrough" onclick="selectModalEngine('seethrough')" class="engine-card" data-engine="seethrough">
+              <span class="engine-card-check" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+              <span class="engine-card-title">二次元角色拆层<span class="engine-card-missing">未安装</span></span>
+              <span class="engine-card-scope">角色立绘 · 部位级 · 含深度</span>
+              <span class="block text-[13px] text-sub leading-relaxed mt-2">专为二次元角色立绘：按头发、五官、服饰等 23+ 部位拆解，带前后深度排序，输出 Live2D 级分层 PSD。</span>
+              <span class="engine-card-model">模型 · See-through V3</span>
+            </button>
+          </div>
+          <div id="engine-setup" class="setup-note hidden mt-3" role="status" aria-live="polite"></div>
+        </div>
+
+        <!-- Step 3: Dynamic Parameter Form -->
+        <div id="params-step">
+          <div class="flex items-center justify-between text-[13px] font-medium text-sub mb-2"><span>3. 推理与显存参数</span><button id="advanced-toggle" type="button" aria-expanded="false" aria-controls="extra-st-params" class="hover:text-main">高级参数</button></div>
+
+          <!-- See-through Parameters -->
+          <div id="params-seethrough" class="p-4 rounded-xl surface-elevated border border-hairline space-y-3.5">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label class="block text-[13px] text-sub mb-1">目标分辨率</label>
+                <select id="st-res" onchange="updateVramEstimate()" class="w-full h-10 px-3 rounded-lg surface-panel border border-hairline text-[14px] text-main focus:outline-none">
+                  <option value="1024">1024 px (速度优先)</option>
+                  <option value="1280" selected>1280 px (原版高精)</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-[13px] text-sub mb-1">深度估计分辨率</label>
+                <select id="st-depth-res" class="w-full h-10 px-3 rounded-lg surface-panel border border-hairline text-[14px] text-main focus:outline-none">
+                  <option value="512">512 px (省显存)</option>
+                  <option value="640">640 px (平衡)</option>
+                  <option value="768" selected>768 px (已验证)</option>
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <div class="flex justify-between text-[13px] mb-1">
+                <span class="text-sub">推理步数</span>
+                <span id="st-steps-val" class="font-mono-num text-main">30 步</span>
+              </div>
+              <input id="st-steps" type="range" min="8" max="50" value="30" oninput="document.getElementById('st-steps-val').textContent=this.value+' 步'" class="w-full studio-slider" />
+              <p class="text-[12px] text-mute leading-relaxed mt-1.5">扩散模型逐步去噪出结果的迭代次数。步数越多细节越稳，耗时按比例增加；默认 30 兼顾质量与速度，一般无需调整。8–20 适合快速预览，40 以上收益递减。</p>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3 pt-1">
+              <label class="flex items-center justify-between p-3 rounded-lg surface-panel border border-hairline cursor-pointer">
+                <span class="text-[13px] text-main">智能左右拆分 (TBLR)</span>
+                <input id="st-tblr" type="checkbox" class="accent-[var(--accent)] w-4 h-4 cursor-pointer" />
+              </label>
+              <label class="flex items-center justify-between p-3 rounded-lg surface-panel border border-hairline cursor-pointer">
+                <div>
+                  <span class="text-[13px] text-main block">Group Offload</span>
+                  <span class="text-[12px] text-mute">低显存模式</span>
+                </div>
+                <input id="st-offload" type="checkbox" checked disabled onchange="updateVramEstimate()" class="accent-[var(--accent)] w-4 h-4 cursor-pointer" />
+              </label>
+            </div>
+          </div>
+
+          <div id="extra-st-params" class="hidden mt-2 rounded-lg surface-elevated border border-hairline p-3 text-[13px] text-sub"><div class="grid grid-cols-2 gap-3"><label>随机种子<input id="st-seed" class="w-full h-10 px-2.5 rounded-lg surface-panel border border-hairline text-main" type="number" value="42" min="0" max="4294967295" /></label><label>深度步数<select id="st-depth-steps" class="w-full h-10 px-2.5 rounded-lg surface-panel border border-hairline text-main"><option value="-1">自动</option></select></label></div></div>
+          <!-- Qwen-Image-Layered Parameters -->
+          <div id="params-qwen" class="hidden p-4 rounded-xl surface-elevated border border-hairline space-y-3.5">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label for="qw-res" class="block text-[13px] text-sub mb-1">输出分辨率</label>
+                <select id="qw-res" class="w-full h-10 px-3 rounded-lg surface-panel border border-hairline text-[14px] text-main focus:outline-none">
+                  <option value="640" selected>640 px · 按原图比例</option>
+                </select>
+              </div>
+              <div>
+                <span class="block text-[13px] text-sub mb-1">权重与显存方案</span>
+                <div id="qw-runtime" class="h-10 px-3 rounded-lg surface-panel border border-hairline text-[13px] text-main flex items-center truncate">GGUF Q4_K_M · Group Offload</div>
+              </div>
+            </div>
+
+            <div>
+              <div class="flex justify-between items-baseline text-[13px] mb-1">
+                <label for="qw-layers" class="text-sub">RGBA 图层上限</label>
+                <span id="qw-layers-val" class="font-mono-num text-main font-semibold">5 层</span>
+              </div>
+              <input id="qw-layers" type="range" min="3" max="8" value="5" aria-describedby="qw-layers-hint" class="w-full studio-slider layer-slider" />
+              <div id="qw-layers-ticks" class="layer-ticks" aria-hidden="true"></div>
+              <div id="qw-layers-hint" class="layer-hint" data-tone="ok" role="status"></div>
+            </div>
+
+            <div>
+              <div class="flex justify-between text-[13px] mb-1">
+                <label for="qw-steps" class="text-sub">推理步数</label>
+                <span id="qw-steps-val" class="font-mono-num text-main">30 步</span>
+              </div>
+              <input id="qw-steps" type="range" min="20" max="50" step="5" value="30" class="w-full studio-slider" />
+              <p class="text-[12px] text-mute leading-relaxed mt-1.5">扩散模型逐步去噪出结果的迭代次数。步数越多细节越稳，耗时按比例增加；默认 30 兼顾质量与速度，一般无需调整。20 适合快速预览，50 约为默认耗时的 1.7 倍。</p>
+            </div>
+
+            <div>
+              <label for="qw-prompt" class="block text-[13px] text-sub mb-1">画面描述（可选）</label>
+              <textarea id="qw-prompt" rows="2" maxlength="1500" placeholder="留空时由 Qwen2.5-VL 自动生成图注，描述越准确分层越稳定" class="w-full px-3 py-2 rounded-lg surface-panel border border-hairline text-[14px] text-main resize-y focus:outline-none"></textarea>
+            </div>
+
+            <p id="qw-estimate" class="text-[12px] text-mute leading-relaxed"></p>
+          </div>
+          <div id="extra-qw-params" class="hidden mt-2 rounded-lg surface-elevated border border-hairline p-3 text-[13px] text-sub space-y-2.5">
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <label>随机种子<input id="qw-seed" class="w-full h-10 px-2.5 rounded-lg surface-panel border border-hairline text-main" type="number" value="777" min="0" max="4294967295" /></label>
+              <label>CFG 强度<input id="qw-cfg" class="w-full h-10 px-2.5 rounded-lg surface-panel border border-hairline text-main" type="number" value="4" min="1" max="8" step="0.5" /></label>
+              <label>图注语言<select id="qw-caption" class="w-full h-10 px-2.5 rounded-lg surface-panel border border-hairline text-main"><option value="en" selected>英文</option><option value="zh">中文</option></select></label>
+            </div>
+            <label class="block">负向描述<input id="qw-negative" class="w-full h-10 px-2.5 rounded-lg surface-panel border border-hairline text-main" type="text" maxlength="500" placeholder="留空即官方默认" /></label>
+            <label class="flex items-center justify-between gap-2.5"><span>CFG 归一化（官方推荐开启）</span><input id="qw-cfg-normalize" type="checkbox" checked class="accent-[var(--accent)] w-4 h-4" /></label>
+          </div>
+        </div>
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="px-5 py-4 border-t border-hairline surface-elevated/50 flex flex-wrap items-center justify-between gap-3">
+        <div class="flex items-center gap-2.5 text-[13px] min-w-0">
+          <span class="w-2 h-2 rounded-full shrink-0" id="vram-dot" style="background-color: var(--accent);"></span>
+          <span class="text-sub whitespace-nowrap">运行配置</span>
+          <span id="vram-estimate-text" class="font-mono-num font-medium text-main truncate">Group Offload</span>
+        </div>
+        <div class="flex items-center gap-2.5 ml-auto">
+          <button onclick="closeNewTaskModal()" class="h-10 px-4 whitespace-nowrap rounded-lg btn-outline text-[14px]">取消</button>
+          <button id="submit-task" onclick="submitNewTask()" class="h-10 px-5 whitespace-nowrap rounded-lg btn-accent text-[14px]">开始拆层任务</button>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="action-dialog" class="w-[min(480px,calc(100%-32px))] rounded-xl surface-panel border border-strong p-4 modal-enter"><h2 id="action-title" class="text-[16px] font-semibold text-main"></h2><p id="action-message" class="text-sub my-3"></p><div class="flex gap-2.5 justify-end"><button type="button" class="h-10 px-3.5 rounded-lg btn-outline" onclick="closeAction()">返回</button><button type="button" id="action-confirm" class="h-10 px-3.5 rounded-lg btn-accent" onclick="confirmAction()"></button></div></dialog>
+
+  <!-- Toast Feedback Container -->
+  <div id="toast-container" role="status" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] pointer-events-none"></div>
+
+  <script type="module" src="/src/studio.js"></script>
+</body>
+</html>
